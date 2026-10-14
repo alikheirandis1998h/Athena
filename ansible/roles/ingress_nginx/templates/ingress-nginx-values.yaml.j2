@@ -1,0 +1,17 @@
+# Managed by Ansible (roles/ingress_nginx). Image and chart are pinned by digest in group_vars/kubernetes.yaml.
+controller:
+  replicaCount: {{ ingress_nginx_replicas }}
+  image:
+    repository: {{ registry_url }}/nginx/nginx-ingress
+    tag: "{{ ingress_nginx_image_tag }}"
+    digest: "{{ ingress_nginx_image_digest }}"
+    pullPolicy: IfNotPresent
+  ingressClass:
+    setAsDefaultIngress: true
+  service:
+    type: NodePort
+    externalTrafficPolicy: Cluster
+    httpPort:
+      nodePort: {{ ingress_nginx_http_nodeport }}
+    httpsPort:
+      nodePort: {{ ingress_nginx_https_nodeport }}

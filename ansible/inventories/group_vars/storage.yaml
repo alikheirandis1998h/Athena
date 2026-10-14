@@ -1,0 +1,9 @@
+---
+# Silo is the maintained MinIO-compatible fork (upstream minio/minio is archived).
+silo_version: "20260916000000.0.0-1PGSTY"
+silo_deb_url: "https://github.com/pgsty/silo/releases/download/RELEASE.2026-09-16T00-00-00Z/silo_20260916000000.0.0-1PGSTY_amd64.deb"
+silo_deb_sha256: "176aad3944d9e9f949baf47bcea86e62a3271094be075c6547c056f652ae7e5f"
+silo_data_dir: /var/lib/silo/data
+silo_api_port: 9000
+silo_console_port: 9001
+silo_backup_bucket: longhorn-backups

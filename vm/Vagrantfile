@@ -1,0 +1,28 @@
+# frozen_string_literal: true
+
+require "yaml"
+
+# Box pins come from vm/vm.env via the Makefile. VM names, IPs, and sizing come from ansible/inventories/hosts.yaml.
+inventory = YAML.load_file(File.join(__dir__, "..", "ansible/inventories/hosts.yaml"))
+groups = inventory.dig("all", "children", "vms", "children")
+nodes = groups.values.flat_map do |group|
+  group.fetch("hosts").map { |name, vars| { name: name, ip: vars.fetch("ansible_host"), cpus: vars.fetch("vm_cpus"), memory: vars.fetch("vm_memory") } }
+end
+
+Vagrant.configure("2") do |config|
+  config.vm.box = ENV.fetch("ATHENA_BOX")
+  config.vm.box_version = ENV.fetch("ATHENA_BOX_VERSION")
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  nodes.each do |node|
+    config.vm.define node[:name] do |machine|
+      machine.vm.hostname = node[:name]
+      machine.vm.network "private_network", ip: node[:ip]
+
+      machine.vm.provider :libvirt do |lv|
+        lv.memory = node[:memory]
+        lv.cpus = node[:cpus]
+      end
+    end
+  end
+end

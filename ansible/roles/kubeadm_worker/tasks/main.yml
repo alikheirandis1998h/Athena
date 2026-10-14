@@ -1,0 +1,61 @@
+---
+- name: Check whether this worker has joined the cluster
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: join_state
+
+- name: List workers that still need to join
+  ansible.builtin.set_fact:
+    worker_join_pending: "{{ groups['workers'] | map('extract', hostvars) | selectattr('join_state.stat.exists', 'equalto', false) | list | length > 0 }}"
+  run_once: true
+
+- name: Create a short-lived join token on the first control-plane node
+  ansible.builtin.command: "kubeadm token create --ttl 1h"
+  register: worker_token
+  when: worker_join_pending | bool
+  delegate_to: "{{ groups['control_plane'][0] }}"
+  run_once: true
+  no_log: true
+
+- name: Compute the cluster CA hash for join verification
+  ansible.builtin.shell: >-
+    openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null |
+    openssl dgst -sha256 -hex | sed 's/^.* //'
+  args:
+    executable: /bin/bash
+  register: worker_ca_hash
+  when: worker_join_pending | bool
+  delegate_to: "{{ groups['control_plane'][0] }}"
+  run_once: true
+  changed_when: false
+  no_log: true
+
+- name: Keep the join values as facts for the workers
+  ansible.builtin.set_fact:
+    join_token: "{{ worker_token.stdout | trim }}"
+    join_ca_hash: "{{ worker_ca_hash.stdout | trim }}"
+  when: worker_join_pending | bool
+  run_once: true
+  no_log: true
+
+- name: Render the join configuration for this worker
+  ansible.builtin.template:
+    src: join-worker.yaml.j2
+    dest: /etc/kubernetes/athena-join.yaml
+    mode: "0600"
+  when: not join_state.stat.exists
+  no_log: true
+
+- name: Join this worker to the cluster through the VIP
+  ansible.builtin.shell: >-
+    kubeadm join --config /etc/kubernetes/athena-join.yaml
+    > /var/log/athena-kubeadm-join.log 2>&1
+  args:
+    executable: /bin/bash
+    creates: /etc/kubernetes/kubelet.conf
+  when: not join_state.stat.exists
+
+- name: Remove this worker's join configuration
+  ansible.builtin.file:
+    path: /etc/kubernetes/athena-join.yaml
+    state: absent

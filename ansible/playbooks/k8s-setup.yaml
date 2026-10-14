@@ -1,0 +1,41 @@
+---
+- hosts: kubernetes
+  become: true
+  roles:
+    - node_tuning
+
+- hosts: control_plane
+  become: true
+  roles:
+    - haproxy_keepalived
+
+- hosts: kubernetes
+  become: true
+  roles:
+    - kubernetes_base
+
+- hosts: control_plane
+  become: true
+  roles:
+    - kubeadm_control_plane
+
+- hosts: workers
+  become: true
+  roles:
+    - kubeadm_worker
+
+- hosts: workers
+  become: true
+  tasks:
+    - name: Prepare the workers for Longhorn volumes
+      ansible.builtin.include_role:
+        name: longhorn
+        tasks_from: workers
+
+- hosts: control_plane[0]
+  become: true
+  roles:
+    - helm
+    - cilium
+    - longhorn
+    - ingress_nginx

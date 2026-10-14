@@ -1,0 +1,85 @@
+---
+- name: Disable swap now
+  ansible.builtin.command: swapoff -a
+  when: ansible_facts['swaptotal_mb'] | int > 0
+  changed_when: true
+
+- name: Remove swap entries from fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^[^#].*\sswap\s'
+    state: absent
+
+- name: Remove swap file
+  ansible.builtin.file:
+    path: /swap.img
+    state: absent
+
+- name: Load kernel modules
+  ansible.builtin.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ node_tuning_kernel_modules }}"
+
+- name: Persist kernel modules across reboots
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/athena.conf
+    content: "{{ node_tuning_kernel_modules | join('\n') }}\n"
+    mode: "0644"
+
+- name: Apply sysctl settings
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/99-athena.conf
+    sysctl_set: true
+    state: present
+    reload: true
+  loop: "{{ node_tuning_sysctl | dict2items }}"
+
+- name: Create systemd drop-in directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /etc/systemd/system.conf.d
+    - /etc/systemd/journald.conf.d
+
+- name: Raise systemd default file-descriptor limit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system.conf.d/athena-limits.conf
+    content: |
+      [Manager]
+      DefaultLimitNOFILE={{ node_tuning_nofile_limit }}
+    mode: "0644"
+  notify: Re-exec systemd
+
+- name: Cap journal size
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/athena.conf
+    content: |
+      [Journal]
+      SystemMaxUse={{ node_tuning_journal_max_use }}
+    mode: "0644"
+  notify: Restart journald
+
+- name: Install chrony
+  ansible.builtin.apt:
+    name: "{{ node_tuning_ntp_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Stop systemd-timesyncd so it does not conflict with chrony
+  ansible.builtin.systemd:
+    name: systemd-timesyncd
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Enable and start chrony
+  ansible.builtin.systemd:
+    name: chrony
+    state: started
+    enabled: true

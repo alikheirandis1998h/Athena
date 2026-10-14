@@ -1,0 +1,30 @@
+---
+- name: Render the ingress controller values
+  ansible.builtin.template:
+    src: ingress-nginx-values.yaml.j2
+    dest: /etc/kubernetes/athena-ingress-nginx-values.yaml
+    mode: "0644"
+  register: ingress_nginx_values
+
+- name: Read the installed ingress controller release
+  ansible.builtin.command: helm list --namespace {{ ingress_nginx_namespace }} --filter '^nginx-ingress$' --output json
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: ingress_nginx_release
+  changed_when: false
+
+- name: Install or upgrade the ingress controller when the chart or the values change
+  ansible.builtin.command: >-
+    helm upgrade --install nginx-ingress oci://ghcr.io/nginx/charts/nginx-ingress@{{ ingress_nginx_chart_digest }}
+    --namespace {{ ingress_nginx_namespace }} --create-namespace
+    --values /etc/kubernetes/athena-ingress-nginx-values.yaml
+    --wait --timeout 10m
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  when: >-
+    ingress_nginx_values.changed or
+    ('nginx-ingress-' ~ ingress_nginx_chart_version) not in (ingress_nginx_release.stdout | from_json | map(attribute='chart') | list)
+
+- name: Wait for the ingress controller rollout
+  ansible.builtin.command: kubectl --kubeconfig /etc/kubernetes/admin.conf -n {{ ingress_nginx_namespace }} rollout status deployment/nginx-ingress-controller --timeout=5m
+  changed_when: false

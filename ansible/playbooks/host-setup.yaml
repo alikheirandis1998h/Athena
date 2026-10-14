@@ -1,0 +1,7 @@
+---
+- name: Prepare the controller host for Vagrant and libvirt
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - host_setup

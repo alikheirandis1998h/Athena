@@ -1,0 +1,56 @@
+---
+- name: Create the Longhorn chart directory
+  ansible.builtin.file:
+    path: "/opt/longhorn/{{ longhorn_version }}"
+    state: directory
+    mode: "0755"
+
+- name: Download the pinned Longhorn release bundle
+  ansible.builtin.get_url:
+    url: "https://github.com/longhorn/longhorn/releases/download/v{{ longhorn_version }}/charts.tar.gz"
+    dest: "/var/tmp/longhorn-charts-{{ longhorn_version }}.tar.gz"
+    checksum: "sha256:{{ longhorn_charts_sha256 }}"
+    mode: "0644"
+
+- name: Unpack the Longhorn chart
+  ansible.builtin.unarchive:
+    src: "/var/tmp/longhorn-charts-{{ longhorn_version }}.tar.gz"
+    dest: "/opt/longhorn/{{ longhorn_version }}"
+    remote_src: true
+    exclude:
+      - .git
+    creates: "/opt/longhorn/{{ longhorn_version }}/charts/longhorn/Chart.yaml"
+
+- name: Render the Longhorn values
+  ansible.builtin.template:
+    src: longhorn-values.yaml.j2
+    dest: /etc/kubernetes/athena-longhorn-values.yaml
+    mode: "0644"
+  register: longhorn_values
+
+- name: Read the installed Longhorn release
+  ansible.builtin.command: helm list --namespace {{ longhorn_namespace }} --filter '^longhorn$' --output json
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: longhorn_release
+  changed_when: false
+
+- name: Install or upgrade Longhorn when the chart or the values change
+  ansible.builtin.command: >-
+    helm upgrade --install longhorn /opt/longhorn/{{ longhorn_version }}/charts/longhorn
+    --namespace {{ longhorn_namespace }} --create-namespace
+    --values /etc/kubernetes/athena-longhorn-values.yaml
+    --wait --timeout 15m
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  when: >-
+    longhorn_values.changed or
+    ('longhorn-' ~ longhorn_version) not in (longhorn_release.stdout | from_json | map(attribute='chart') | list)
+
+- name: Wait for Longhorn managers and the default StorageClass
+  ansible.builtin.shell: >-
+    kubectl --kubeconfig /etc/kubernetes/admin.conf -n {{ longhorn_namespace }} rollout status daemonset/longhorn-manager --timeout=10m &&
+    kubectl --kubeconfig /etc/kubernetes/admin.conf get storageclass longhorn
+  args:
+    executable: /bin/bash
+  changed_when: false

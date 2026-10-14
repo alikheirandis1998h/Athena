@@ -1,0 +1,4 @@
+---
+# Short-lived join token and uploaded certificate key. They are created only when a node still needs to join.
+kubeadm_token_ttl: 1h
+kubeadm_patches_dir: /etc/kubernetes/patches

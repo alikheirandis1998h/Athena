@@ -1,0 +1,32 @@
+# Managed by Ansible (roles/kubeadm_control_plane).
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: {{ ansible_host }}
+  bindPort: {{ kube_apiserver_port }}
+nodeRegistration:
+  name: {{ inventory_hostname }}
+patches:
+  directory: {{ kubeadm_patches_dir }}
+skipPhases:
+  - addon/kube-proxy
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: {{ kubernetes_version }}
+imageRepository: {{ registry_url }}/oss/v2/kubernetes
+etcd:
+  local:
+    imageRepository: {{ registry_url }}/oss/v2/etcd-io
+    imageTag: v3.6.6
+controlPlaneEndpoint: "{{ haproxy_vip }}:{{ kube_apiserver_port }}"
+apiServer:
+  certSANs:
+    - {{ haproxy_vip }}
+{% for host in groups['control_plane'] %}
+    - {{ hostvars[host].ansible_host }}
+    - {{ host }}
+{% endfor %}
+networking:
+  podSubnet: {{ kubernetes_pod_subnet }}
+  serviceSubnet: {{ kubernetes_service_subnet }}

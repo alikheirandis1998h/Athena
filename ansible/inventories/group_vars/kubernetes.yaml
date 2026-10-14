@@ -1,0 +1,53 @@
+---
+# Kubernetes 1.35 packages from pkgs.k8s.io. Pins are exact package versions.
+kubernetes_minor: v1.35
+kubernetes_package_version: "1.35.9-1.1"
+kubernetes_apt_key_sha256: "7627818cf7bae52f9008c93e8b1f961f53dea11d40891778de216fb1b43be54d"
+# Ubuntu 24.04 containerd, pinned to the exact package version.
+containerd_package_version: "2.2.1-0ubuntu1~24.04.3"
+# Pause image that kubeadm 1.35.9 expects (kubeadm constants.PauseVersion).
+kubernetes_pause_version: "3.10.1"
+
+# Cluster-wide kubeadm settings. Pod and service ranges do not overlap the node network (192.168.56.0/24).
+kubernetes_version: v1.35.9
+kubernetes_pod_subnet: 192.168.0.0/16
+kubernetes_service_subnet: 10.96.0.0/12
+
+# Control-plane endpoint shared by control-plane and worker joins (HAProxy VIP).
+haproxy_vip: 192.168.56.10
+kube_apiserver_port: 6443
+
+# Helm 3 client, installed on the first control-plane node to install the Cilium chart. Checksum from get.helm.sh.
+helm_version: v3.19.0
+helm_sha256: a7f81ce08007091b86d8bd696eb4d86b8d0f2e1b9f6c714be62f82f96a594496
+
+# Cilium 1.20.2 chart from quay.io. The digest pins the exact chart contents; the version is for readability.
+cilium_chart_version: 1.20.2
+cilium_chart_digest: sha256:a7c12d330dd96bfcda3bf057b24be8f36566c34868265f930f776dff6f42d838
+# Node interface that carries the cluster traffic (the NAT interface eth0 is left alone).
+cilium_device: eth1
+# Cilium component images on the registry. Tags match the chart 1.20.2 defaults; the agent and operator use cilium_chart_version.
+cilium_envoy_image_tag: v1.37.6-1789133542-cbec91f666af0bf742da986d43832932dbb26b82
+cilium_certgen_image_tag: v0.4.11
+
+# Longhorn 1.13.0 chart bundle from the GitHub release. Checksum computed from the downloaded asset at pin time.
+longhorn_version: 1.13.0
+longhorn_charts_sha256: 54930377f48241d9a5e283780277c10f5a4b2cad1da86703c9447a8cf6b444f5
+# Three replicas across the three workers: one node can fail without losing data.
+longhorn_replica_count: 3
+
+# Every container image is pulled from this registry. Image paths are built from it, so changing it moves the whole cluster.
+registry_url: docker.novin.cloud
+
+# Spilo 4.1-p2 (PostgreSQL 18) from ghcr.io/zalando/spilo-18. Digest read from the registry manifest at pin time.
+spilo_image: ghcr.io/zalando/spilo-18:4.1-p2@sha256:258a87d34699387f3b6b45d30874c21c6b838ed51c9371ae2a70151d57137990
+
+# F5 NGINX Ingress Controller 5.6.3 (chart 2.7.3, Apache 2.0). Digests from the registries at pin time.
+ingress_nginx_chart_version: 2.7.3
+ingress_nginx_chart_digest: sha256:8a051ba7d36a290035e3d755017d6f558b6f6137cfd0fe39681c9fbd47f604a6
+ingress_nginx_image_tag: 5.6.3
+ingress_nginx_image_digest: sha256:f1fe3c576670eb24f1eb26d0b11d474471db696174d5b651f534cce192ad763f
+# Local simplification: no cloud load balancer, so the controller listens on fixed NodePorts on every worker.
+ingress_nginx_http_nodeport: 30080
+ingress_nginx_https_nodeport: 30443
+athena_app_host: athena.test

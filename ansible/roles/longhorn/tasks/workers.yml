@@ -1,0 +1,12 @@
+---
+# Host prerequisites for Longhorn volumes on the workers: the iSCSI initiator used for engine connections.
+- name: Install the iSCSI initiator used by Longhorn
+  ansible.builtin.apt:
+    name: open-iscsi
+    state: present
+
+- name: Enable and start iscsid
+  ansible.builtin.systemd:
+    name: iscsid
+    enabled: true
+    state: started

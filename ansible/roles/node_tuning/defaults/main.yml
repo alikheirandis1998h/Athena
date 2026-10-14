@@ -1,0 +1,21 @@
+---
+node_tuning_kernel_modules:
+  - overlay
+  - br_netfilter
+  - nf_conntrack
+  - iscsi_tcp
+
+node_tuning_sysctl:
+  net.ipv4.ip_forward: 1
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1
+  net.netfilter.nf_conntrack_max: 262144
+  net.core.somaxconn: 4096
+  fs.inotify.max_user_watches: 524288
+  fs.inotify.max_user_instances: 512
+  fs.file-max: 2097152
+
+node_tuning_nofile_limit: 1048576
+node_tuning_journal_max_use: 500M
+node_tuning_ntp_packages:
+  - chrony

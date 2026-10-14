@@ -1,0 +1,3 @@
+---
+ingress_nginx_namespace: ingress-nginx-f5
+ingress_nginx_replicas: 2

@@ -1,0 +1,36 @@
+# Managed by Ansible (roles/longhorn). Longhorn runs on the workers; control-plane nodes stay free of storage.
+defaultSettings:
+  defaultReplicaCount: {{ longhorn_replica_count }}
+  defaultDataPath: /var/lib/longhorn
+# Every Longhorn image is pulled from the registry in group_vars. Repositories and tags stay at the chart defaults (Longhorn 1.13.0 pins).
+global:
+  imageRegistry: {{ registry_url }}
+image:
+  longhorn:
+    engine:
+      repository: longhornio/longhorn-engine
+    manager:
+      repository: longhornio/longhorn-manager
+    ui:
+      repository: longhornio/longhorn-ui
+    instanceManager:
+      repository: longhornio/longhorn-instance-manager
+    shareManager:
+      repository: longhornio/longhorn-share-manager
+    backingImageManager:
+      repository: longhornio/backing-image-manager
+    supportBundleKit:
+      repository: longhornio/support-bundle-kit
+  csi:
+    attacher:
+      repository: longhornio/csi-attacher
+    provisioner:
+      repository: longhornio/csi-provisioner
+    nodeDriverRegistrar:
+      repository: longhornio/csi-node-driver-registrar
+    resizer:
+      repository: longhornio/csi-resizer
+    snapshotter:
+      repository: longhornio/csi-snapshotter
+    livenessProbe:
+      repository: longhornio/livenessprobe

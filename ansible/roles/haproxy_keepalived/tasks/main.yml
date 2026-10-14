@@ -1,0 +1,72 @@
+---
+- name: Install HAProxy and keepalived
+  ansible.builtin.apt:
+    name:
+      - "haproxy={{ haproxy_version }}"
+      - "keepalived={{ keepalived_version }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Allow HAProxy to bind the VIP on nodes that do not hold it
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_nonlocal_bind
+    value: "1"
+    sysctl_file: /etc/sysctl.d/99-athena-vip.conf
+    sysctl_set: true
+    reload: true
+
+- name: Generate the VRRP secret once on the first control-plane node
+  ansible.builtin.shell: >-
+    umask 077 &&
+    printf 'KEEPALIVED_AUTH_PASS=%s\n' "$(openssl rand -hex 4)" > /etc/keepalived/auth.env
+  args:
+    executable: /bin/bash
+    creates: /etc/keepalived/auth.env
+  when: inventory_hostname == groups['control_plane'][0]
+  no_log: true
+
+- name: Read the VRRP secret from the first control-plane node
+  ansible.builtin.slurp:
+    src: /etc/keepalived/auth.env
+  delegate_to: "{{ groups['control_plane'][0] }}"
+  register: keepalived_auth_raw
+  no_log: true
+
+- name: Set the VRRP secret for this node
+  ansible.builtin.set_fact:
+    keepalived_auth_pass: "{{ (keepalived_auth_raw.content | b64decode).split('=')[1] | trim }}"
+  no_log: true
+
+- name: Render HAProxy configuration
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: root
+    mode: "0644"
+    validate: haproxy -c -f %s
+  notify: Restart haproxy
+
+- name: Render keepalived configuration
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    owner: root
+    group: root
+    mode: "0600"
+    validate: keepalived -t -f %s
+  notify: Restart keepalived
+  no_log: true
+
+- name: Enable and start HAProxy
+  ansible.builtin.systemd:
+    name: haproxy
+    state: started
+    enabled: true
+
+- name: Enable and start keepalived
+  ansible.builtin.systemd:
+    name: keepalived
+    state: started
+    enabled: true

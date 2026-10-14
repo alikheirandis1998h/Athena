@@ -1,0 +1,44 @@
+---
+- hosts: kubernetes
+  gather_facts: false
+  tasks:
+    - name: Read node state
+      ansible.builtin.shell: |
+        echo "swap=$(swapon --show --noheadings | wc -l)"
+        echo "ip_forward=$(sysctl -n net.ipv4.ip_forward)"
+        echo "bridge_nf=$(sysctl -n net.bridge.bridge-nf-call-iptables 2>/dev/null || echo missing)"
+        echo "chrony=$(systemctl is-active chrony 2>/dev/null)"
+        echo "containerd=$(systemctl is-active containerd 2>/dev/null)"
+        echo "kubelet=$(systemctl is-active kubelet 2>/dev/null)"
+      changed_when: false
+      register: node_state
+
+    - name: Show node summary
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ node_state.stdout_lines | join(', ') }}"
+
+- hosts: control_plane[0]
+  become: true
+  gather_facts: false
+  vars:
+    longhorn_namespace: longhorn-system
+    ingress_nginx_namespace: ingress-nginx-f5
+  tasks:
+    - name: Read cluster state from the first control-plane node
+      ansible.builtin.shell: |
+        k="kubectl --kubeconfig /etc/kubernetes/admin.conf"
+        echo "nodes:"
+        $k get nodes --no-headers 2>&1 | awk '{print "  " $1 "  " $2 "  " $5}'
+        echo "cilium=$($k -n kube-system get ds cilium -o jsonpath='{.status.numberReady}/{.status.desiredNumberScheduled}' 2>&1)"
+        echo "longhorn_pods_not_running=$($k -n {{ longhorn_namespace }} get pods --no-headers 2>/dev/null | awk '$3!="Running" && $3!="Completed"' | wc -l)"
+        echo "longhorn_storageclass=$($k get storageclass longhorn -o name 2>/dev/null || echo missing)"
+        echo "ingress=$($k -n {{ ingress_nginx_namespace }} get deploy nginx-ingress-controller -o jsonpath='{.status.readyReplicas}/{.status.replicas}' 2>&1)"
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+      register: cluster_state
+
+    - name: Show cluster summary
+      ansible.builtin.debug:
+        var: cluster_state.stdout_lines

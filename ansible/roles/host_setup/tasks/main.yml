@@ -1,0 +1,93 @@
+---
+- name: Install the required APT packages
+  ansible.builtin.apt:
+    name: "{{ host_setup_apt_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+- name: Read the installed Vagrant version
+  ansible.builtin.command: vagrant --version
+  register: host_setup_vagrant_version_out
+  changed_when: false
+  check_mode: false
+  failed_when: false
+
+- name: Download the pinned Vagrant package
+  ansible.builtin.get_url:
+    url: "https://releases.hashicorp.com/vagrant/{{ host_setup_vagrant_version }}/vagrant_{{ host_setup_vagrant_version }}-1_amd64.deb"
+    dest: "{{ host_setup_cache_dir }}/vagrant_{{ host_setup_vagrant_version }}-1_amd64.deb"
+    checksum: "sha256:{{ host_setup_vagrant_sha256 }}"
+    mode: "0644"
+  when: (host_setup_vagrant_version_out.stdout.split() + [''])[1] != host_setup_vagrant_version
+
+- name: Install the pinned Vagrant package
+  ansible.builtin.apt:
+    deb: "{{ host_setup_cache_dir }}/vagrant_{{ host_setup_vagrant_version }}-1_amd64.deb"
+    state: present
+  become: true
+  when: (host_setup_vagrant_version_out.stdout.split() + [''])[1] != host_setup_vagrant_version
+
+- name: List the installed Vagrant plugins
+  ansible.builtin.command: vagrant plugin list
+  register: host_setup_vagrant_plugins
+  changed_when: false
+  check_mode: false
+
+- name: Install the pinned vagrant-libvirt plugin
+  ansible.builtin.command: >-
+    vagrant plugin install vagrant-libvirt
+    --plugin-version {{ host_setup_vagrant_libvirt_version }}
+  when: >-
+    host_setup_vagrant_plugins.stdout_lines
+    | select('match', 'vagrant-libvirt \\(' ~ (host_setup_vagrant_libvirt_version | regex_escape))
+    | list | length == 0
+
+- name: Start and enable libvirtd
+  ansible.builtin.systemd:
+    name: libvirtd
+    state: started
+    enabled: true
+  become: true
+
+- name: Add the user to the libvirt group
+  ansible.builtin.user:
+    name: "{{ host_setup_user }}"
+    groups: libvirt
+    append: true
+  become: true
+
+- name: Install the libvirt socket ACL drop-in
+  ansible.builtin.copy:
+    dest: "{{ host_setup_acl_dropin }}"
+    content: |
+      [Service]
+      ExecStartPost=/usr/bin/setfacl -m u:{{ host_setup_user }}:rw {{ host_setup_libvirt_socket }}
+    mode: "0644"
+  become: true
+  notify:
+    - Reload systemd
+    - Restart libvirtd
+
+- name: Apply the pending libvirtd restart before setting the socket ACL
+  ansible.builtin.meta: flush_handlers
+
+- name: Grant the user access to the libvirt socket
+  ansible.posix.acl:
+    path: "{{ host_setup_libvirt_socket }}"
+    entity: "{{ host_setup_user }}"
+    etype: user
+    permissions: rw
+    state: present
+  become: true
+
+- name: Check whether /dev/kvm is usable by the user
+  ansible.builtin.stat:
+    path: /dev/kvm
+  register: host_setup_kvm
+
+- name: Warn when /dev/kvm is not writable
+  ansible.builtin.debug:
+    msg: "Warning: /dev/kvm is not writable by {{ host_setup_user }}. KVM acceleration will be unavailable."
+  when: not (host_setup_kvm.stat.exists and host_setup_kvm.stat.writeable)

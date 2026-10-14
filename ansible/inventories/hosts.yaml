@@ -1,0 +1,50 @@
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_become_exe: /usr/bin/sudo.ws
+  children:
+    kubernetes:
+      children:
+        control_plane:
+        workers:
+    vms:
+      vars:
+        ansible_user: vagrant
+        ansible_python_interpreter: /usr/bin/python3
+        ansible_ssh_private_key_file: "{{ inventory_dir }}/../../vm/.vagrant/machines/{{ inventory_hostname }}/libvirt/private_key"
+      children:
+        control_plane:
+          hosts:
+            athena-cp-1:
+              ansible_host: 192.168.56.11
+              vm_cpus: 2
+              vm_memory: 3072
+            athena-cp-2:
+              ansible_host: 192.168.56.12
+              vm_cpus: 2
+              vm_memory: 3072
+            athena-cp-3:
+              ansible_host: 192.168.56.13
+              vm_cpus: 2
+              vm_memory: 3072
+        workers:
+          hosts:
+            athena-worker-1:
+              ansible_host: 192.168.56.21
+              vm_cpus: 2
+              vm_memory: 3072
+            athena-worker-2:
+              ansible_host: 192.168.56.22
+              vm_cpus: 2
+              vm_memory: 3072
+            athena-worker-3:
+              ansible_host: 192.168.56.23
+              vm_cpus: 2
+              vm_memory: 3072
+        storage:
+          hosts:
+            athena-minio:
+              ansible_host: 192.168.56.31
+              vm_cpus: 1
+              vm_memory: 1024

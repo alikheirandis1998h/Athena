@@ -1,0 +1,34 @@
+---
+- name: Render the Cilium values
+  ansible.builtin.template:
+    src: cilium-values.yaml.j2
+    dest: /etc/kubernetes/athena-cilium-values.yaml
+    mode: "0644"
+  register: cilium_values
+
+- name: Read the installed Cilium release
+  ansible.builtin.command: helm list --namespace kube-system --filter '^cilium$' --output json
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: cilium_release
+  changed_when: false
+
+- name: Install or upgrade Cilium when the chart or the values change
+  ansible.builtin.command: >-
+    helm upgrade --install cilium oci://quay.io/cilium/charts/cilium@{{ cilium_chart_digest }}
+    --namespace kube-system
+    --values /etc/kubernetes/athena-cilium-values.yaml
+    --wait --timeout 10m
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  when: >-
+    cilium_values.changed or
+    ('cilium-' ~ cilium_chart_version) not in (cilium_release.stdout | from_json | map(attribute='chart') | list)
+
+- name: Wait for the Cilium agents and every node to become Ready
+  ansible.builtin.shell: >-
+    kubectl --kubeconfig /etc/kubernetes/admin.conf -n kube-system rollout status daemonset/cilium --timeout=5m &&
+    kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready nodes --all --timeout=5m
+  args:
+    executable: /bin/bash
+  changed_when: false
