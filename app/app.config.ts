@@ -10,5 +10,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   extra: {
     ...config.extra,
     apiUrl: process.env.EXPO_PUBLIC_API_URL ?? DEFAULT_API_URL,
+    router: { root: 'routes' },
   },
 });

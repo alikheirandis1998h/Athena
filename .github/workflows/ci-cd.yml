@@ -93,7 +93,7 @@ jobs:
           file: app/Dockerfile
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           build-args: |
-            EXPO_PUBLIC_API_URL=${{ vars.EXPO_PUBLIC_API_URL || 'http://localhost:8080' }}
+            EXPO_PUBLIC_API_URL=${{ vars.EXPO_PUBLIC_API_URL || 'http://api.baseapp.local:30080' }}
           tags: |
             ${{ env.IMAGE_REPO }}:web-${{ github.sha }}
             ${{ env.IMAGE_REPO }}:web-latest
