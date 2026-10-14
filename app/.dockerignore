@@ -1,0 +1,7 @@
+.env
+.env.*
+.expo
+.git
+dist
+node_modules
+backend

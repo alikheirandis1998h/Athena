@@ -1,0 +1,244 @@
+basePath: /
+definitions:
+  handlers.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  handlers.LogoutRequest:
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
+    type: object
+  handlers.RefreshRequest:
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
+    type: object
+  handlers.RegisterRequest:
+    properties:
+      email:
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  handlers.TokenResponse:
+    properties:
+      access_token:
+        type: string
+      refresh_token:
+        type: string
+      token_type:
+        type: string
+      user:
+        $ref: '#/definitions/handlers.UserResponse'
+    type: object
+  handlers.UserResponse:
+    properties:
+      email:
+        type: string
+      id:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: API Support
+  description: Reusable Go backend template (Gin + sqlc/pgx + JWT auth).
+  license:
+    name: MIT
+  termsOfService: http://swagger.io/terms/
+  title: Base Backend API
+  version: "1.0"
+paths:
+  /api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Verifies credentials and returns an access/refresh token pair
+      parameters:
+      - description: Login payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Login
+      tags:
+      - auth
+  /api/v1/auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Revokes the given refresh token
+      parameters:
+      - description: Logout payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.LogoutRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Logout
+      tags:
+      - auth
+  /api/v1/auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Validates a refresh token and returns a new token pair, rotating
+        the refresh token
+      parameters:
+      - description: Refresh payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.RefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Refresh access token
+      tags:
+      - auth
+  /api/v1/auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Creates a user account and returns an access/refresh token pair
+      parameters:
+      - description: Registration payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Register a new user
+      tags:
+      - auth
+  /api/v1/users/me:
+    get:
+      description: Returns the authenticated user's profile
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.UserResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - users
+  /health:
+    get:
+      description: Returns service liveness status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - health
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer" followed by a space and the access token.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
