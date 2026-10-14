@@ -1,0 +1,4 @@
+---
+# k9s 0.51.0 release binary from GitHub. Checksum from the release's checksums.sha256.
+k9s_version: "0.51.0"
+k9s_sha256: "c3752ad51a5a4015a113819c4eeb6e55a4d0e4b8e652494797532f6fc8161dd7"

@@ -2,7 +2,6 @@ all:
   hosts:
     localhost:
       ansible_connection: local
-      ansible_become_exe: /usr/bin/sudo.ws
   children:
     kubernetes:
       children:

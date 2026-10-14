@@ -4,7 +4,7 @@
 
 **Designed but not implemented:** none.
 
-**Out of scope:** the VMs themselves (`make up`) and any remote-target configuration.
+**Out of scope:** the VMs themselves (`make vm up`) and any remote-target configuration.
 
 ## What the role does
 
@@ -18,7 +18,9 @@
 ## Inputs
 
 - Pins are role defaults in `roles/host_setup/defaults/main.yml`. Override them with `-e` or group/host vars if needed.
-- The user is the account that runs `ansible-playbook`. Run it with `--ask-become-pass` so sudo can prompt.
+- The user is the account that runs `ansible-playbook`. Run it with `--ask-become-pass` so sudo can prompt. Run it as your normal user, not with `sudo make`, or the role would target root.
+- On systems where `/usr/bin/sudo` is sudo-rs, Ansible's privilege escalation can fail. Point it at classic sudo with `export ANSIBLE_BECOME_EXE=/usr/bin/sudo.ws` before `make host-setup`. This is an environment setting, not an inventory setting, so it doesn't affect other machines.
+- After the first run, the user is added to the `libvirt` group. Log out and back in before running `make vm up`.
 
 ## Differences from the shell script
 

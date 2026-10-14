@@ -1,0 +1,68 @@
+---
+- name: Read the installed k9s version
+  ansible.builtin.shell: k9s version 2>/dev/null | grep -o 'v[0-9][0-9.]*' | head -1
+  args:
+    executable: /bin/bash
+  register: admin_tools_k9s_version
+  changed_when: false
+  check_mode: false
+  failed_when: false
+
+- name: Download the pinned k9s release
+  ansible.builtin.get_url:
+    url: "https://github.com/derailed/k9s/releases/download/v{{ k9s_version }}/k9s_Linux_amd64.tar.gz"
+    dest: "/var/tmp/k9s_{{ k9s_version }}_Linux_amd64.tar.gz"
+    checksum: "sha256:{{ k9s_sha256 }}"
+    mode: "0644"
+  when: admin_tools_k9s_version.stdout != 'v' ~ k9s_version
+
+- name: Install the k9s binary
+  ansible.builtin.unarchive:
+    src: "/var/tmp/k9s_{{ k9s_version }}_Linux_amd64.tar.gz"
+    dest: /usr/local/bin
+    remote_src: true
+    include:
+      - k9s
+    owner: root
+    group: root
+    mode: "0755"
+  when: admin_tools_k9s_version.stdout != 'v' ~ k9s_version
+
+- name: Read the login user's home directory
+  ansible.builtin.command: getent passwd {{ ansible_user }}
+  register: admin_tools_login_passwd
+  changed_when: false
+
+- name: Create the login user's kubectl directory
+  ansible.builtin.file:
+    path: "{{ (admin_tools_login_passwd.stdout.split(':'))[5] }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0700"
+
+- name: Give the login user the admin kubeconfig
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ (admin_tools_login_passwd.stdout.split(':'))[5] }}/.kube/config"
+    remote_src: true
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0600"
+
+- name: Create root's kubectl directory
+  ansible.builtin.file:
+    path: /root/.kube
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Give root the admin kubeconfig, so sudo kubectl and sudo k9s work without a flag
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /root/.kube/config
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"

@@ -7,7 +7,7 @@
   register: cilium_values
 
 - name: Read the installed Cilium release
-  ansible.builtin.command: helm list --namespace kube-system --filter '^cilium$' --output json
+  ansible.builtin.command: helm list --all --namespace kube-system --filter '^cilium$' --output json
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: cilium_release
@@ -23,7 +23,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: >-
     cilium_values.changed or
-    ('cilium-' ~ cilium_chart_version) not in (cilium_release.stdout | from_json | map(attribute='chart') | list)
+    (cilium_release.stdout | from_json | selectattr('chart', 'equalto', 'cilium-' ~ cilium_chart_version) | selectattr('status', 'equalto', 'deployed') | list | length == 0)
 
 - name: Wait for the Cilium agents and every node to become Ready
   ansible.builtin.shell: >-

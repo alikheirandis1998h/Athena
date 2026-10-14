@@ -13,6 +13,9 @@ kubernetes_version: v1.35.9
 kubernetes_pod_subnet: 192.168.0.0/16
 kubernetes_service_subnet: 10.96.0.0/12
 
+# Kubelet pulls images in parallel, up to this many at once. The default serializes pulls per node, which slows Longhorn and Cilium installs.
+kubelet_max_parallel_image_pulls: 5
+
 # Control-plane endpoint shared by control-plane and worker joins (HAProxy VIP).
 haproxy_vip: 192.168.56.10
 kube_apiserver_port: 6443

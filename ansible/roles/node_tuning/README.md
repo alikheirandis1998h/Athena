@@ -25,7 +25,7 @@ Each row gives the problem, the reason for the value, the downside, how producti
 
 ## Verification
 
-Run `make provision` twice. The second run must report no changes. Then check the settings in the table above on any node.
+Run `make k8s up` twice. The second run must report no changes. Then check the settings in the table above on any node.
 
 ## Limits of the local setup
 

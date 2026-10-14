@@ -7,7 +7,7 @@
   register: ingress_nginx_values
 
 - name: Read the installed ingress controller release
-  ansible.builtin.command: helm list --namespace {{ ingress_nginx_namespace }} --filter '^nginx-ingress$' --output json
+  ansible.builtin.command: helm list --all --namespace {{ ingress_nginx_namespace }} --filter '^nginx-ingress$' --output json
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: ingress_nginx_release
@@ -23,7 +23,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: >-
     ingress_nginx_values.changed or
-    ('nginx-ingress-' ~ ingress_nginx_chart_version) not in (ingress_nginx_release.stdout | from_json | map(attribute='chart') | list)
+    (ingress_nginx_release.stdout | from_json | selectattr('chart', 'equalto', 'nginx-ingress-' ~ ingress_nginx_chart_version) | selectattr('status', 'equalto', 'deployed') | list | length == 0)
 
 - name: Wait for the ingress controller rollout
   ansible.builtin.command: kubectl --kubeconfig /etc/kubernetes/admin.conf -n {{ ingress_nginx_namespace }} rollout status deployment/nginx-ingress-controller --timeout=5m

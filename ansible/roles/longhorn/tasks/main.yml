@@ -29,7 +29,7 @@
   register: longhorn_values
 
 - name: Read the installed Longhorn release
-  ansible.builtin.command: helm list --namespace {{ longhorn_namespace }} --filter '^longhorn$' --output json
+  ansible.builtin.command: helm list --all --namespace {{ longhorn_namespace }} --filter '^longhorn$' --output json
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: longhorn_release
@@ -45,7 +45,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: >-
     longhorn_values.changed or
-    ('longhorn-' ~ longhorn_version) not in (longhorn_release.stdout | from_json | map(attribute='chart') | list)
+    (longhorn_release.stdout | from_json | selectattr('chart', 'equalto', 'longhorn-' ~ longhorn_version) | selectattr('status', 'equalto', 'deployed') | list | length == 0)
 
 - name: Wait for Longhorn managers and the default StorageClass
   ansible.builtin.shell: >-

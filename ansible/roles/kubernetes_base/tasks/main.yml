@@ -90,6 +90,22 @@
     state: started
     enabled: true
 
+- name: Check whether this node already has a kubelet configuration
+  ansible.builtin.stat:
+    path: /var/lib/kubelet/config.yaml
+  register: kubelet_config
+
+- name: Allow parallel image pulls on nodes that already joined the cluster
+  ansible.builtin.lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: "^{{ item.key }}:"
+    line: "{{ item.key }}: {{ item.value }}"
+  loop:
+    - { key: serializeImagePulls, value: "false" }
+    - { key: maxParallelImagePulls, value: "{{ kubelet_max_parallel_image_pulls }}" }
+  when: kubelet_config.stat.exists
+  notify: Restart kubelet
+
 - name: Enable kubelet (it starts for real during kubeadm init or join)
   ansible.builtin.systemd:
     name: kubelet

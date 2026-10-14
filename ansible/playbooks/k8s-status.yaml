@@ -1,4 +1,5 @@
 ---
+# Read-only validation. Each node and cluster check must pass, or the run fails.
 - hosts: kubernetes
   gather_facts: false
   tasks:
@@ -13,32 +14,66 @@
       changed_when: false
       register: node_state
 
-    - name: Show node summary
-      ansible.builtin.debug:
-        msg: "{{ inventory_hostname }}: {{ node_state.stdout_lines | join(', ') }}"
+    - name: Check node state
+      ansible.builtin.assert:
+        that:
+          - "'swap=0' in node_state.stdout_lines"
+          - "'ip_forward=1' in node_state.stdout_lines"
+          - "'bridge_nf=1' in node_state.stdout_lines"
+          - "'chrony=active' in node_state.stdout_lines"
+          - "'containerd=active' in node_state.stdout_lines"
+          - "'kubelet=active' in node_state.stdout_lines"
+        fail_msg: "{{ inventory_hostname }}: {{ node_state.stdout_lines | join(', ') }}"
+        success_msg: "{{ inventory_hostname }}: {{ node_state.stdout_lines | join(', ') }}"
 
 - hosts: control_plane[0]
   become: true
   gather_facts: false
   vars:
+    kubectl: kubectl --kubeconfig /etc/kubernetes/admin.conf
     longhorn_namespace: longhorn-system
     ingress_nginx_namespace: ingress-nginx-f5
+    cluster_checks:
+      - name: All nodes Ready
+        cmd: "{{ kubectl }} wait --for=condition=Ready nodes --all --timeout=10s"
+      - name: Cilium agents ready
+        cmd: "{{ kubectl }} -n kube-system rollout status daemonset/cilium --timeout=10s"
+      - name: Longhorn managers ready
+        cmd: "{{ kubectl }} -n {{ longhorn_namespace }} rollout status daemonset/longhorn-manager --timeout=10s"
+      - name: Longhorn pods running
+        cmd: >-
+          {{ kubectl }} -n {{ longhorn_namespace }} get pods --no-headers |
+          awk '$3 != "Completed" { split($2, r, "/"); if ($3 != "Running" || r[1] != r[2]) bad++ } END { exit (bad > 0) }'
+      - name: Longhorn StorageClass exists
+        cmd: "{{ kubectl }} get storageclass longhorn"
+      - name: Ingress controller ready
+        cmd: "{{ kubectl }} -n {{ ingress_nginx_namespace }} rollout status deployment/nginx-ingress-controller --timeout=10s"
   tasks:
-    - name: Read cluster state from the first control-plane node
-      ansible.builtin.shell: |
-        k="kubectl --kubeconfig /etc/kubernetes/admin.conf"
-        echo "nodes:"
-        $k get nodes --no-headers 2>&1 | awk '{print "  " $1 "  " $2 "  " $5}'
-        echo "cilium=$($k -n kube-system get ds cilium -o jsonpath='{.status.numberReady}/{.status.desiredNumberScheduled}' 2>&1)"
-        echo "longhorn_pods_not_running=$($k -n {{ longhorn_namespace }} get pods --no-headers 2>/dev/null | awk '$3!="Running" && $3!="Completed"' | wc -l)"
-        echo "longhorn_storageclass=$($k get storageclass longhorn -o name 2>/dev/null || echo missing)"
-        echo "ingress=$($k -n {{ ingress_nginx_namespace }} get deploy nginx-ingress-controller -o jsonpath='{.status.readyReplicas}/{.status.replicas}' 2>&1)"
+    - name: Show nodes
+      ansible.builtin.command: "{{ kubectl }} get nodes -o wide"
+      changed_when: false
+
+    - name: Run the cluster checks
+      ansible.builtin.shell: "{{ item.cmd }}"
       args:
         executable: /bin/bash
+      loop: "{{ cluster_checks }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: check_results
       changed_when: false
       failed_when: false
-      register: cluster_state
 
-    - name: Show cluster summary
+    - name: Print each cluster check
       ansible.builtin.debug:
-        var: cluster_state.stdout_lines
+        msg: "{{ item.item.name }}: {{ 'ok' if item.rc == 0 else 'FAILED' }}"
+      loop: "{{ check_results.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Fail when any cluster check failed
+      ansible.builtin.assert:
+        that:
+          - check_results.results | rejectattr('rc', 'equalto', 0) | list | length == 0
+        fail_msg: "Failed checks: {{ check_results.results | rejectattr('rc', 'equalto', 0) | map(attribute='item.name') | join(', ') }}"
+        success_msg: "All cluster checks passed"

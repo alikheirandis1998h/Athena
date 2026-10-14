@@ -30,3 +30,8 @@ apiServer:
 networking:
   podSubnet: {{ kubernetes_pod_subnet }}
   serviceSubnet: {{ kubernetes_service_subnet }}
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+serializeImagePulls: false
+maxParallelImagePulls: {{ kubelet_max_parallel_image_pulls }}

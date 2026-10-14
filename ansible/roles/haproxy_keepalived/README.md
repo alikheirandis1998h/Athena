@@ -22,6 +22,6 @@ Gives kubeadm one stable control-plane endpoint, `192.168.56.10:6443`, on the th
 
 ## Verification
 
-- `make provision` twice: the second run must report `changed=0` on the control-plane nodes.
+- `make k8s up` twice: the second run must report `changed=0` on the control-plane nodes.
 - Exactly one node holds `192.168.56.10` on `eth1`, and `haproxy` and `keepalived` are both `active`.
-- Failover: stopping keepalived on the holder moves the VIP to the next priority, and the VIP stays there when the first node comes back. Not yet run; see the status line in `AGENTS.md`.
+- Failover: stopping keepalived on the holder moves the VIP to the next priority, and the VIP stays there when the first node comes back. Not yet run.
