@@ -38,7 +38,7 @@ th { background: #f3f3f3; }
 <ul>
 <li>Multi-node local virtual infrastructure<br><span class="answer"><strong>Implemented.</strong> <code>vm/Vagrantfile</code> builds 6 libvirt VMs from <code>ansible/inventories/hosts.yaml</code>: 3 control planes and 3 workers.</span></li>
 <li>Automated and idempotent Kubernetes provisioning<br><span class="answer"><strong>Implemented.</strong> <code>make k8s up</code> runs <code>ansible/playbooks/k8s-setup.yaml</code>.</span></li>
-<li>Production-oriented node and container-runtime tuning<br><span class="answer"><strong>Partially implemented.</strong> Node tuning, the containerd systemd cgroup driver, and the journal cap are implemented. Kubelet reservations, eviction thresholds, and graceful shutdown are written (<code>kubeadm-config.yaml.j2</code>, <code>kubernetes_base</code>) but not yet applied to the cluster.</span></li>
+<li>Production-oriented node and container-runtime tuning<br><span class="answer"><strong>Implemented.</strong> Node tuning, the containerd systemd cgroup driver, the journal cap, kubelet reservations, eviction thresholds, and graceful shutdown are applied to the cluster. Graceful shutdown has not been tested by a real node poweroff.</span></li>
 <li>Automatic deployment of a versioned HTTP application<br><span class="answer"><strong>Implemented.</strong> <code>make app up</code> deploys the Helm chart at a <code>vX.Y.Z-release</code> tag. <code>make up</code> runs it.</span></li>
 <li>Basic operational visibility<br><span class="answer"><strong>Partially implemented.</strong> <code>make k8s status</code>, <code>kubectl</code>, events, logs, and probes are available. There is no metrics stack.</span></li>
 <li>One meaningful failure exercise<br><span class="answer"><strong>Implemented.</strong> <code>make failure pod</code> and <code>make failure node</code>, documented in <code>docs/failure-exercise.md</code>.</span></li>
@@ -84,11 +84,11 @@ th { background: #f3f3f3; }
 <li>Support repeatable creation, destruction, and recreation.<br><span class="answer"><strong>Implemented.</strong> <code>make vm destroy</code> removes the VMs and <code>make up</code> recreates them. A full destroy and recreate was not run in this review.</span></li>
 <li>Use modular and maintainable automation.<br><span class="answer"><strong>Implemented.</strong> One role per component, each with a README, and one playbook per workflow.</span></li>
 <li>Clearly define ownership when multiple automation systems are used.<br><span class="answer"><strong>Partially implemented.</strong> Ownership is implicit in the code: Vagrant owns the VMs, Ansible owns the host and cluster state and the app Secret, and Helm owns the app release. There is no ownership table yet.</span></li>
-<li>Avoid continuous management of the same resource by conflicting systems.<br><span class="answer"><strong>Partially implemented.</strong> Ansible applies the Secret and Helm owns the rest of the chart. The <code>rollout restart</code> that touched the Deployments on every run has been removed, but this is not yet verified on the cluster.</span></li>
+<li>Avoid continuous management of the same resource by conflicting systems.<br><span class="answer"><strong>Partially implemented.</strong> Ansible applies the Secret and Helm owns the rest of the chart. The <code>rollout restart</code> that touched the Deployments on every run has been removed, and the v0.1.2 deploy ran without it.</span></li>
 </ul>
 
 <p>Automation must be idempotent. Repeated execution must not unexpectedly reset the cluster, interrupt healthy workloads, or recreate unchanged resources without justification.</p>
-<p class="answer"><strong>Partially implemented.</strong> <code>make k8s up</code> is designed to be idempotent, and the README states it. The app's <code>rollout restart</code> interrupted healthy pods on every run, and it has been removed. Neither change has been re-run on the cluster yet.</p>
+<p class="answer"><strong>Partially implemented.</strong> <code>make k8s up</code> is designed to be idempotent, and the README states it. The app's <code>rollout restart</code> interrupted healthy pods on every run, and it has been removed. The kubelet settings are applied to the cluster. A dry run found that the kubelet config step rewrote the file and restarted every kubelet on each run. That is fixed. A second live run of <code>make k8s up</code> reported changed=0 on all six nodes.</p>
 
 <p>Local simplifications are acceptable, including a non-HA control plane, but they must be identified along with the corresponding production design.</p>
 <p class="answer"><strong>Implemented.</strong> The README table "Local simplifications and production design" lists each local choice with its production design. The control plane is HA here (3 nodes), so the non-HA simplification does not apply.</p>
@@ -106,12 +106,13 @@ th { background: #f3f3f3; }
 <li>Kernel modules and limits<br><span class="answer"><strong>Implemented.</strong> <code>overlay</code>, <code>br_netfilter</code>, <code>nf_conntrack</code>, and <code>iscsi_tcp</code> are loaded and persisted.</span></li>
 <li>File descriptors<br><span class="answer"><strong>Implemented.</strong> <code>DefaultLimitNOFILE=1048576</code> and <code>fs.file-max=2097152</code>.</span></li>
 <li>Connection tracking<br><span class="answer"><strong>Implemented.</strong> <code>nf_conntrack_max=262144</code>.</span></li>
-<li>Memory and disk pressure<br><span class="answer"><strong>Partially implemented.</strong> Swap is off and the journal is capped at 500M. The eviction thresholds are written but not yet applied.</span></li>
+<li>Memory and disk pressure<br><span class="answer"><strong>Partially implemented.</strong> Swap is off and the journal is capped at 500M. The eviction thresholds are applied.</span></li>
 <li>Image and log accumulation<br><span class="answer"><strong>Partially implemented.</strong> The journal cap is in place. Image garbage-collection thresholds are not set.</span></li>
 <li>Time synchronization<br><span class="answer"><strong>Implemented.</strong> chrony is installed and <code>systemd-timesyncd</code> is disabled.</span></li>
-<li>Kubelet resource reservations<br><span class="answer"><strong>Written, not applied.</strong> <code>systemReserved</code> and <code>kubeReserved</code> are 100m CPU and 256Mi memory each. They are in <code>kubeadm-config.yaml.j2</code>, and <code>kubernetes_base</code> merges them into existing nodes.</span></li>
-<li>Eviction thresholds<br><span class="answer"><strong>Written, not applied.</strong> <code>evictionHard</code> uses the kubelet defaults, and <code>evictionSoft</code> is 300Mi for 90s.</span></li>
-<li>Graceful shutdown and recovery<br><span class="answer"><strong>Written, not applied.</strong> <code>shutdownGracePeriod</code> is 30s, with 10s for critical pods. A systemd-logind drop-in sets <code>InhibitDelayMaxSec</code> to 60s. The API stops within 10s on SIGTERM. A node shutdown has not been tested.</span></li>
+<li>Kubelet resource reservations<br><span class="answer"><strong>Implemented.</strong> <code>systemReserved</code> and <code>kubeReserved</code> are 100m CPU and 256Mi memory each. They are in <code>kubeadm-config.yaml.j2</code>, and <code>kubernetes_base</code> merges them into existing nodes. Each node reports 1800m allocatable CPU.</span></li>
+<li>Eviction thresholds<br><span class="answer"><strong>Implemented.</strong> <code>evictionHard</code> is 100Mi memory, 10% node filesystem, 5% inodes, and 15% image filesystem. <code>evictionSoft</code> is 300Mi for 90s.</span></li>
+<li>Graceful shutdown and recovery<br><span class="answer"><strong>Partially implemented.</strong> <code>shutdownGracePeriod</code> is 30s, with 10s for critical pods, and is in the kubelet config on every node. A systemd-logind drop-in sets <code>InhibitDelayMaxSec</code> to 60s. The API stops within 10s on SIGTERM. A node shutdown has not been tested.</span></li>
+<li>Timezone<br><span class="answer"><strong>Implemented.</strong> <code>node_tuning_timezone</code> is <code>Asia/Tehran</code>, applied to every node. Cloud images default to UTC.</span></li>
 </ul>
 
 <p>For each important setting, explain:</p>
@@ -123,7 +124,7 @@ th { background: #f3f3f3; }
 <li>How it would be selected or calculated in production</li>
 <li>How its application is verified</li>
 </ol>
-<p class="answer"><strong>Implemented for the node tuning settings and the kubelet settings.</strong> <code>ansible/roles/node_tuning/README.md</code> has one row per setting with the problem, the value, the downside, the production choice, and the verification step. The kubelet rows are written, but their verification has not been run on the cluster.</p>
+<p class="answer"><strong>Implemented for the node tuning settings and the kubelet settings.</strong> <code>ansible/roles/node_tuning/README.md</code> has one row per setting with the problem, the value, the downside, the production choice, and the verification step. The kubelet rows are applied, and their allocatable and config checks were run on the cluster.</p>
 
 <blockquote>Generic tuning values copied without reasoning are insufficient.</blockquote>
 
@@ -148,7 +149,7 @@ th { background: #f3f3f3; }
 <ul>
 <li>Run multiple replicas.<br><span class="answer"><strong>Implemented.</strong> The API and web each run 2 replicas. A PodDisruptionBudget with <code>minAvailable: 1</code> covers each.</span></li>
 <li>Define resource requests and limits.<br><span class="answer"><strong>Implemented in the chart.</strong> API: 50m CPU and 64Mi memory requested, 256Mi limit. Web: 10m and 16Mi requested, 64Mi limit. PostgreSQL: 100m and 128Mi requested, 512Mi limit. <code>make test</code> does not check these yet.</span></li>
-<li>Run without unnecessary privileges.<br><span class="answer"><strong>Partially implemented.</strong> The API, web, and migrate pods run as non-root with a read-only root filesystem, no privilege escalation, all capabilities dropped, and the RuntimeDefault seccomp profile. PostgreSQL still runs as root. The check is in <code>make test</code> but has not been run on the cluster yet.</span></li>
+<li>Run without unnecessary privileges.<br><span class="answer"><strong>Partially implemented.</strong> The API, web, and migrate pods run as non-root with a read-only root filesystem, no privilege escalation, all capabilities dropped, and the RuntimeDefault seccomp profile. PostgreSQL still runs as root. The check is in <code>make test</code>, and it passed on the v0.1.2 deploy.</span></li>
 <li>Handle startup and termination gracefully.<br><span class="answer"><strong>Partially implemented.</strong> The API handles SIGTERM with a 10s shutdown. The pod exercise showed a clean stop. The chart sets no <code>terminationGracePeriodSeconds</code> or <code>preStop</code> hook.</span></li>
 <li>Route traffic only to healthy instances.<br><span class="answer"><strong>Implemented.</strong> Readiness probes gate the Service endpoints. The pod exercise recorded 0 failed samples with 2 replicas.</span></li>
 <li>Remain available during a normal rolling update.<br><span class="answer"><strong>Partially implemented.</strong> Two replicas and a PDB are in place. A rolling update has not been tested on the cluster. The Deployments have no explicit <code>maxSurge</code> or <code>maxUnavailable</code>.</span></li>
@@ -332,7 +333,7 @@ th { background: #f3f3f3; }
 <li>Health checks work.<br><span class="answer"><strong>Implemented.</strong> The ingress <code>/health</code> check.</span></li>
 <li>The application reports an immutable version.<br><span class="answer"><strong>Partially implemented.</strong> The image tag is checked for immutability. The app does not report its version, so that is not checked.</span></li>
 <li>Required node tuning is present.<br><span class="answer"><strong>Implemented.</strong> Each sysctl, the file-descriptor limit, the journal cap, and the kernel modules are checked on every VM. The kubelet settings are not checked.</span></li>
-<li>Workload resource and security controls are applied.<br><span class="answer"><strong>Partially implemented.</strong> The API and web security context is checked. Resource requests and limits are not checked, and PostgreSQL is not checked. The security check has not been run on the cluster yet.</span></li>
+<li>Workload resource and security controls are applied.<br><span class="answer"><strong>Partially implemented.</strong> The API and web security context is checked. Resource requests and limits are not checked, and PostgreSQL is not checked. The security check passed on the v0.1.2 deploy.</span></li>
 <li>No known plaintext secrets exist in the repository.<br><span class="answer"><strong>Implemented.</strong> The tracked files are scanned for secret patterns and secret file names.</span></li>
 </ul>
 
@@ -446,7 +447,7 @@ th { background: #f3f3f3; }
 <tbody>
 <tr><td>Automation, reproducibility, and idempotency</td><td>25%</td><td><span class="answer">Sections 1 and 2. <code>make up</code>, the Ansible roles, and the idempotency items are partly unverified.</span></td></tr>
 <tr><td>Kubernetes and infrastructure architecture</td><td>20%</td><td><span class="answer">Sections 2 and 4. README topology and architecture diagram.</span></td></tr>
-<tr><td>Production-oriented tuning</td><td>15%</td><td><span class="answer">Section 3. The kubelet settings are written but not applied.</span></td></tr>
+<tr><td>Production-oriented tuning</td><td>15%</td><td><span class="answer">Section 3. The kubelet settings are applied to the cluster.</span></td></tr>
 <tr><td>Security and secrets management</td><td>10%</td><td><span class="answer">Section 7. Least privilege and PostgreSQL are open.</span></td></tr>
 <tr><td>Acceptance testing and failure handling</td><td>10%</td><td><span class="answer">Sections 8 and 9.</span></td></tr>
 <tr><td>CI/CD, deployment, rollback, and observability design</td><td>10%</td><td><span class="answer">Sections 5 and 6, and <code>docs/</code>. The designs are not built.</span></td></tr>
@@ -465,10 +466,10 @@ th { background: #f3f3f3; }
 
 <ol>
 <li>Automated environment creation<br><span class="answer"><strong>Available</strong> through <code>make up</code>. A full destroy and recreate has not been run in this review.</span></li>
-<li>Idempotent automation re-execution<br><span class="answer"><strong>Partially available.</strong> <code>make k8s up</code> is designed for it. A re-run after the kubelet changes has not been done in this review.</span></li>
-<li>The single-command acceptance test<br><span class="answer"><strong>Available.</strong> <code>make test</code> passes on the live cluster after the latest <code>make app up</code>. The security check is not yet run.</span></li>
+<li>Idempotent automation re-execution<br><span class="answer"><strong>Implemented.</strong> <code>make k8s up</code> re-ran on the live cluster after the kubelet fix, with changed=0 and failed=0 on all six nodes.</span></li>
+<li>The single-command acceptance test<br><span class="answer"><strong>Available.</strong> <code>make test</code> passes on the live cluster after the v0.1.2 deploy, including the security check.</span></li>
 <li>Application access and version identification<br><span class="answer"><strong>Available.</strong> The web and API hosts through the ingress. The version is the image tag. The app does not report it.</span></li>
-<li>Applied production tuning<br><span class="answer"><strong>Partially available.</strong> The node tuning is applied. The kubelet settings are written and not yet applied.</span></li>
+<li>Applied production tuning<br><span class="answer"><strong>Available.</strong> The node tuning and the kubelet settings are applied. Allocatable CPU shows the reservations.</span></li>
 <li>The selected failure exercise<br><span class="answer"><strong>Available.</strong> <code>make failure pod</code> and <code>make failure node</code>.</span></li>
 <li>Major architecture decisions and trade-offs<br><span class="answer"><strong>Available</strong> in the README and the role READMEs.</span></li>
 <li>Production evolution<br><span class="answer"><strong>Available</strong> in the README table.</span></li>
