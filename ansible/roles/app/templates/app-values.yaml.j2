@@ -1,8 +1,8 @@
 # Managed by Ansible (roles/app). Secrets come from the app-secrets Secret, not from this file.
 api:
-  tag: "api-{{ app_release_sha }}"
+  tag: "api-{{ app_release_tag }}"
 web:
-  tag: "web-{{ app_release_sha }}"
+  tag: "web-{{ app_release_tag }}"
 ingress:
   webHost: {{ app_web_host }}
   apiHost: {{ app_api_host }}

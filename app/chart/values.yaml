@@ -6,13 +6,15 @@ secretName: app-secrets
 
 api:
   tag: ""          # set by Ansible to api-<commit sha>
-  replicas: 1
+  replicas: 2
   port: 8080
+  minAvailable: 1  # PodDisruptionBudget: voluntary evictions keep at least one pod ready
 
 web:
   tag: ""          # set by Ansible to web-<commit sha>
-  replicas: 1
+  replicas: 2
   port: 80
+  minAvailable: 1
 
 postgres:
   image: docker.io/library/postgres:16-alpine

@@ -1,0 +1,23 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: app-api
+  labels:
+    app: app-api
+spec:
+  minAvailable: {{ .Values.api.minAvailable }}
+  selector:
+    matchLabels:
+      app: app-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: app-web
+  labels:
+    app: app-web
+spec:
+  minAvailable: {{ .Values.web.minAvailable }}
+  selector:
+    matchLabels:
+      app: app-web
