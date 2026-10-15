@@ -1,0 +1,31 @@
+# Defaults for the app chart. Ansible (roles/app) overrides the image tags and
+# hostnames. Secrets are not in this chart: they live in the Secret named by secretName.
+
+imageRepository: docker.io/alikheirandis1998h/base
+secretName: app-secrets
+
+api:
+  tag: ""          # set by Ansible to api-<commit sha>
+  replicas: 1
+  port: 8080
+
+web:
+  tag: ""          # set by Ansible to web-<commit sha>
+  replicas: 1
+  port: 80
+
+postgres:
+  image: docker.io/library/postgres:16-alpine
+  storageClass: longhorn
+  storageSize: 5Gi
+
+migrate:
+  image: docker.io/migrate/migrate:v4.18.1
+
+ingress:
+  className: nginx
+  webHost: baseapp.local
+  apiHost: api.baseapp.local
+
+# Browser origins allowed to call the API. "*" allows any origin.
+cors: "*"

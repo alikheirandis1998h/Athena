@@ -1,0 +1,9 @@
+---
+app_namespace: app
+app_release_name: app
+app_web_host: baseapp.local
+app_api_host: api.baseapp.local
+app_chart_src: "{{ playbook_dir }}/../../app/chart"
+app_chart_dest: /opt/athena/app-chart
+# Generated on first run and reused after that. Kept on the controller and gitignored.
+app_secrets_dir: "{{ playbook_dir }}/../.secrets/app"

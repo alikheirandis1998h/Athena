@@ -1,0 +1,4 @@
+---
+# The controller uses sudo-rs on some hosts, and Ansible can't handle its password prompt.
+# Use the classic sudo binary on the controller when it exists, and plain sudo everywhere else.
+ansible_become_exe: "{{ '/usr/bin/sudo.ws' if (inventory_hostname == 'localhost' and lookup('ansible.builtin.fileglob', '/usr/bin/sudo.ws')) else 'sudo' }}"

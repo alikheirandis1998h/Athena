@@ -1,0 +1,16 @@
+---
+- hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Add the app hostnames to /etc/hosts on the controller
+      ansible.builtin.include_role:
+        name: app
+        tasks_from: hosts_file
+
+- hosts: control_plane[0]
+  become: true
+  gather_facts: false
+  roles:
+    - app

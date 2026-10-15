@@ -1,0 +1,45 @@
+# Runs the SQL migrations after each install or upgrade. The API image ships the
+# migration files but not the migrate CLI, so an init container copies the files
+# out of the API image and the migrate image runs them.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: app-migrate
+  labels:
+    app: app-migrate
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app: app-migrate
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: copy-migrations
+          image: {{ .Values.imageRepository }}:{{ required "api.tag is required" .Values.api.tag }}
+          imagePullPolicy: Always
+          command: ["sh", "-c", "cp -r /app/migrations /work/migrations"]
+          volumeMounts:
+            - name: work
+              mountPath: /work
+      containers:
+        - name: migrate
+          image: {{ .Values.migrate.image }}
+          imagePullPolicy: Always
+          args: ["-path", "/work/migrations", "-database", "$(DATABASE_URL)", "up"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: database-url
+          volumeMounts:
+            - name: work
+              mountPath: /work
+      volumes:
+        - name: work
+          emptyDir: {}

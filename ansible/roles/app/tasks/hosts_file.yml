@@ -1,0 +1,6 @@
+---
+- name: Point the app hostnames at a worker node in /etc/hosts on the controller
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} ANSIBLE athena app hosts"
+    block: "{{ hostvars['athena-worker-1'].ansible_host }} {{ app_web_host }} {{ app_api_host }}"

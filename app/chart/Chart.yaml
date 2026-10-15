@@ -1,0 +1,6 @@
+apiVersion: v2
+name: app
+description: Base sample app (Go API, Expo web build, PostgreSQL) for the Athena cluster
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

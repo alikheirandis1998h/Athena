@@ -1,0 +1,95 @@
+---
+- name: Check that the commit SHA of the built images was given
+  ansible.builtin.assert:
+    that:
+      - app_release_sha is defined
+      - app_release_sha is match('^[0-9a-f]{40}$')
+    fail_msg: "Pass the commit SHA that CI built, for example: make app deploy APP_SHA=<40-character sha>"
+
+- name: Create the local secrets directory
+  ansible.builtin.file:
+    path: "{{ app_secrets_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Generate the application secrets on the first run, then reuse them
+  ansible.builtin.set_fact:
+    app_postgres_password: "{{ lookup('ansible.builtin.password', app_secrets_dir ~ '/postgres-password length=40 chars=ascii_letters,digits') }}"
+    app_jwt_access_secret: "{{ lookup('ansible.builtin.password', app_secrets_dir ~ '/jwt-access-secret length=64 chars=ascii_letters,digits') }}"
+    app_jwt_refresh_secret: "{{ lookup('ansible.builtin.password', app_secrets_dir ~ '/jwt-refresh-secret length=64 chars=ascii_letters,digits') }}"
+  no_log: true
+
+- name: Create the app namespace
+  ansible.builtin.shell: >-
+    kubectl --kubeconfig /etc/kubernetes/admin.conf create namespace {{ app_namespace }} --dry-run=client -o yaml |
+    kubectl --kubeconfig /etc/kubernetes/admin.conf apply -f -
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Render the application Secret
+  ansible.builtin.template:
+    src: app-secrets.yaml.j2
+    dest: /etc/kubernetes/athena-app-secrets.yaml
+    mode: "0600"
+  no_log: true
+
+- name: Apply the application Secret
+  ansible.builtin.command: kubectl --kubeconfig /etc/kubernetes/admin.conf apply -f /etc/kubernetes/athena-app-secrets.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  no_log: true
+  changed_when: false
+
+- name: Remove the rendered Secret file from the control-plane node
+  ansible.builtin.file:
+    path: /etc/kubernetes/athena-app-secrets.yaml
+    state: absent
+
+- name: Copy the application Helm chart to the control-plane node
+  ansible.builtin.copy:
+    src: "{{ app_chart_src }}/"
+    dest: "{{ app_chart_dest }}/"
+    mode: "0644"
+
+- name: Render the application values
+  ansible.builtin.template:
+    src: app-values.yaml.j2
+    dest: /etc/kubernetes/athena-app-values.yaml
+    mode: "0644"
+
+- name: Install or upgrade the application
+  ansible.builtin.command: >-
+    helm upgrade --install {{ app_release_name }} {{ app_chart_dest }}
+    --namespace {{ app_namespace }}
+    --values /etc/kubernetes/athena-app-values.yaml
+    --wait --timeout 10m
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: true
+
+- name: Restart the app pods so they pull the current images for this commit
+  ansible.builtin.command: kubectl --kubeconfig /etc/kubernetes/admin.conf -n {{ app_namespace }} rollout restart deployment/app-api deployment/app-web
+  changed_when: true
+
+- name: Wait for the app rollouts
+  ansible.builtin.command: kubectl --kubeconfig /etc/kubernetes/admin.conf -n {{ app_namespace }} rollout status deployment/{{ item }} --timeout=5m
+  loop:
+    - app-api
+    - app-web
+  changed_when: false
+
+- name: Show the application pods and ingress
+  ansible.builtin.command: kubectl --kubeconfig /etc/kubernetes/admin.conf -n {{ app_namespace }} get pods,ingress
+  changed_when: false
+  register: app_status
+
+- name: Show where the app is reachable
+  ansible.builtin.debug:
+    msg:
+      - "{{ app_status.stdout }}"
+      - "Web: http://{{ app_web_host }}:{{ ingress_nginx_http_nodeport }}"
+      - "API: http://{{ app_api_host }}:{{ ingress_nginx_http_nodeport }}/health"
