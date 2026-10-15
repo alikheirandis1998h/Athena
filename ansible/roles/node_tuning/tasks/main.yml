@@ -83,3 +83,7 @@
     name: chrony
     state: started
     enabled: true
+
+- name: Set the node timezone
+  community.general.timezone:
+    name: "{{ node_tuning_timezone }}"

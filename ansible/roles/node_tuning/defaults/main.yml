@@ -19,3 +19,5 @@ node_tuning_nofile_limit: 1048576
 node_tuning_journal_max_use: 500M
 node_tuning_ntp_packages:
   - chrony
+
+node_tuning_timezone: Asia/Tehran
