@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Senior DevOps/SRE Technical Assignment</title>
+<style>
+body { font-family: system-ui, sans-serif; max-width: 1000px; margin: 2em auto; padding: 0 1em; color: #222; line-height: 1.5; }
+h1, h2, h3 { color: #222; }
+h2 { border-bottom: 1px solid #ddd; padding-bottom: 0.2em; margin-top: 1.6em; }
+hr { border: 0; border-top: 1px solid #ddd; margin: 2em 0; }
+blockquote { border-left: 4px solid #bbb; margin: 1em 0; padding: 0.2em 1em; color: #444; background: #fafafa; }
+code { background: #f3f3f3; padding: 0 3px; border-radius: 3px; }
+pre { background: #f3f3f3; padding: 0.8em; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: #f3f3f3; }
+.answer { color: #1f5fbf; }
+</style>
+</head>
+<body>
+
+<h1>Senior DevOps/SRE Technical Assignment</h1>
+
+<h2>Automated Local Kubernetes Platform</h2>
+
+<p>Design and implement a reproducible, <strong>Infrastructure-as-Code-managed Kubernetes platform</strong> on local virtual machines.</p>
+
+<p>The assessment focuses on outcomes and engineering judgment. Technology choices, architecture, and repository structure are intentionally left to the candidate and must be justified.</p>
+
+<p class="answer">Answers in this file are blue. They describe the repository as it stands: <strong>Implemented</strong>, <strong>Partially implemented</strong>, <strong>Designed but not implemented</strong>, <strong>Not done</strong>, or <strong>Out of scope</strong>. File paths are relative to the repository root.</p>
+
+<hr>
+
+<h2>1. Scope</h2>
+
+<h3>Must be implemented</h3>
+
+<ul>
+<li>Multi-node local virtual infrastructure<br><span class="answer"><strong>Implemented.</strong> <code>vm/Vagrantfile</code> builds 6 libvirt VMs from <code>ansible/inventories/hosts.yaml</code>: 3 control planes and 3 workers.</span></li>
+<li>Automated and idempotent Kubernetes provisioning<br><span class="answer"><strong>Implemented.</strong> <code>make k8s up</code> runs <code>ansible/playbooks/k8s-setup.yaml</code>.</span></li>
+<li>Production-oriented node and container-runtime tuning<br><span class="answer"><strong>Partially implemented.</strong> Node tuning, the containerd systemd cgroup driver, and the journal cap are implemented. Kubelet reservations, eviction thresholds, and graceful shutdown are written (<code>kubeadm-config.yaml.j2</code>, <code>kubernetes_base</code>) but not yet applied to the cluster.</span></li>
+<li>Automatic deployment of a versioned HTTP application<br><span class="answer"><strong>Implemented.</strong> <code>make app up</code> deploys the Helm chart at a <code>vX.Y.Z-release</code> tag. <code>make up</code> runs it.</span></li>
+<li>Basic operational visibility<br><span class="answer"><strong>Partially implemented.</strong> <code>make k8s status</code>, <code>kubectl</code>, events, logs, and probes are available. There is no metrics stack.</span></li>
+<li>One meaningful failure exercise<br><span class="answer"><strong>Implemented.</strong> <code>make failure pod</code> and <code>make failure node</code>, documented in <code>docs/failure-exercise.md</code>.</span></li>
+<li>A single command that validates the implementation<br><span class="answer"><strong>Implemented.</strong> <code>make test</code> runs <code>ansible/playbooks/acceptance-test.yaml</code>.</span></li>
+</ul>
+
+<h3>Must be designed and documented</h3>
+
+<p>Implementation is optional for:</p>
+
+<ul>
+<li>GitLab CI/CD<br><span class="answer"><strong>Designed but not implemented</strong> as GitLab. The repository uses GitHub Actions (<code>.github/workflows/ci-cd.yml</code>), which is implemented. The design is in <code>docs/ci-cd.md</code>.</span></li>
+<li>Production deployment workflow<br><span class="answer"><strong>Designed but not implemented.</strong> <code>docs/ci-cd.md</code> covers the deployment section, and the README covers the deploy path.</span></li>
+<li>Rollback workflow<br><span class="answer"><strong>Designed but not implemented.</strong> <code>docs/rollback.md</code> describes the procedure. The <code>helm rollback</code> path has not been run on the cluster.</span></li>
+<li>Production monitoring and alerting<br><span class="answer"><strong>Designed but not implemented.</strong> <code>docs/observability.md</code> covers signals, collection, dashboards, alerts, SLOs, access, and failure of the monitoring itself.</span></li>
+</ul>
+
+<h3>Optional bonuses</h3>
+
+<ul>
+<li>HTTP/application-level autoscaling<br><span class="answer"><strong>Not done.</strong></span></li>
+<li>Monitoring and alerting implementation<br><span class="answer"><strong>Not done.</strong> Designed only, see above.</span></li>
+<li>Production-oriented database backend<br><span class="answer"><strong>Not done.</strong> PostgreSQL is a single StatefulSet on a Longhorn volume with no backups and no tested restore.</span></li>
+<li>Candidate-developed application<br><span class="answer"><strong>Not done.</strong> The application is the sample app in this repository. The backend has no test files.</span></li>
+</ul>
+
+<hr>
+
+<h2>2. Platform Requirements</h2>
+
+<p>The environment must be recoverable from version control without manually preparing its virtual machines.</p>
+
+<p>The candidate must select and justify the virtualization, configuration-management, Kubernetes bootstrap, container runtime, networking, ingress, storage, and access-control approaches.</p>
+<p class="answer">The README gives each choice in its topology and local-choices tables. The reasons for each choice are spread across the role READMEs. There is no single decisions document.</p>
+
+<p>The solution must:</p>
+
+<ul>
+<li>Use multiple Kubernetes nodes and support replicated workloads.<br><span class="answer"><strong>Implemented.</strong> 3 control planes and 3 workers. The API and web run 2 replicas each, and the ingress runs 2 replicas.</span></li>
+<li>Provide functional pod networking, cluster DNS, and ingress.<br><span class="answer"><strong>Implemented.</strong> Cilium 1.20.2 replaces kube-proxy. <code>make test</code> checks cluster DNS, pod-to-pod calls, and ingress on every worker.</span></li>
+<li>Provide persistent storage where required by the workload.<br><span class="answer"><strong>Implemented.</strong> Longhorn with 3 replicas. PostgreSQL uses a 5 GiB PVC.</span></li>
+<li>Control important software and dependency versions.<br><span class="answer"><strong>Implemented.</strong> Versions and checksums are in <code>ansible/inventories/group_vars/kubernetes.yaml</code>. The app images are tagged by commit and release.</span></li>
+<li>Support repeatable creation, destruction, and recreation.<br><span class="answer"><strong>Implemented.</strong> <code>make vm destroy</code> removes the VMs and <code>make up</code> recreates them. A full destroy and recreate was not run in this review.</span></li>
+<li>Use modular and maintainable automation.<br><span class="answer"><strong>Implemented.</strong> One role per component, each with a README, and one playbook per workflow.</span></li>
+<li>Clearly define ownership when multiple automation systems are used.<br><span class="answer"><strong>Partially implemented.</strong> Ownership is implicit in the code: Vagrant owns the VMs, Ansible owns the host and cluster state and the app Secret, and Helm owns the app release. There is no ownership table yet.</span></li>
+<li>Avoid continuous management of the same resource by conflicting systems.<br><span class="answer"><strong>Partially implemented.</strong> Ansible applies the Secret and Helm owns the rest of the chart. The <code>rollout restart</code> that touched the Deployments on every run has been removed, but this is not yet verified on the cluster.</span></li>
+</ul>
+
+<p>Automation must be idempotent. Repeated execution must not unexpectedly reset the cluster, interrupt healthy workloads, or recreate unchanged resources without justification.</p>
+<p class="answer"><strong>Partially implemented.</strong> <code>make k8s up</code> is designed to be idempotent, and the README states it. The app's <code>rollout restart</code> interrupted healthy pods on every run, and it has been removed. Neither change has been re-run on the cluster yet.</p>
+
+<p>Local simplifications are acceptable, including a non-HA control plane, but they must be identified along with the corresponding production design.</p>
+<p class="answer"><strong>Implemented.</strong> The README table "Local simplifications and production design" lists each local choice with its production design. The control plane is HA here (3 nodes), so the non-HA simplification does not apply.</p>
+
+<hr>
+
+<h2>3. Production-Oriented Tuning</h2>
+
+<p>Apply and justify operating-system, container-runtime, and Kubernetes-node tuning appropriate to the available resources.</p>
+
+<p>Relevant areas may include:</p>
+
+<ul>
+<li>Networking and packet forwarding<br><span class="answer"><strong>Implemented.</strong> <code>net.ipv4.ip_forward</code> and the bridge netfilter settings, in <code>node_tuning/defaults/main.yml</code>.</span></li>
+<li>Kernel modules and limits<br><span class="answer"><strong>Implemented.</strong> <code>overlay</code>, <code>br_netfilter</code>, <code>nf_conntrack</code>, and <code>iscsi_tcp</code> are loaded and persisted.</span></li>
+<li>File descriptors<br><span class="answer"><strong>Implemented.</strong> <code>DefaultLimitNOFILE=1048576</code> and <code>fs.file-max=2097152</code>.</span></li>
+<li>Connection tracking<br><span class="answer"><strong>Implemented.</strong> <code>nf_conntrack_max=262144</code>.</span></li>
+<li>Memory and disk pressure<br><span class="answer"><strong>Partially implemented.</strong> Swap is off and the journal is capped at 500M. The eviction thresholds are written but not yet applied.</span></li>
+<li>Image and log accumulation<br><span class="answer"><strong>Partially implemented.</strong> The journal cap is in place. Image garbage-collection thresholds are not set.</span></li>
+<li>Time synchronization<br><span class="answer"><strong>Implemented.</strong> chrony is installed and <code>systemd-timesyncd</code> is disabled.</span></li>
+<li>Kubelet resource reservations<br><span class="answer"><strong>Written, not applied.</strong> <code>systemReserved</code> and <code>kubeReserved</code> are 100m CPU and 256Mi memory each. They are in <code>kubeadm-config.yaml.j2</code>, and <code>kubernetes_base</code> merges them into existing nodes.</span></li>
+<li>Eviction thresholds<br><span class="answer"><strong>Written, not applied.</strong> <code>evictionHard</code> uses the kubelet defaults, and <code>evictionSoft</code> is 300Mi for 90s.</span></li>
+<li>Graceful shutdown and recovery<br><span class="answer"><strong>Written, not applied.</strong> <code>shutdownGracePeriod</code> is 30s, with 10s for critical pods. A systemd-logind drop-in sets <code>InhibitDelayMaxSec</code> to 60s. The API stops within 10s on SIGTERM. A node shutdown has not been tested.</span></li>
+</ul>
+
+<p>For each important setting, explain:</p>
+
+<ol>
+<li>The problem it addresses</li>
+<li>Why the selected value is appropriate</li>
+<li>Potential negative effects</li>
+<li>How it would be selected or calculated in production</li>
+<li>How its application is verified</li>
+</ol>
+<p class="answer"><strong>Implemented for the node tuning settings and the kubelet settings.</strong> <code>ansible/roles/node_tuning/README.md</code> has one row per setting with the problem, the value, the downside, the production choice, and the verification step. The kubelet rows are written, but their verification has not been run on the cluster.</p>
+
+<blockquote>Generic tuning values copied without reasoning are insufficient.</blockquote>
+
+<hr>
+
+<h2>4. Application</h2>
+
+<p>Automatically deploy an immutable, versioned HTTP application as part of the platform bootstrap.</p>
+<p class="answer"><strong>Implemented.</strong> Release tags <code>vX.Y.Z-release</code> resolve to a commit. The images are <code>api-&lt;tag&gt;</code> and <code>web-&lt;tag&gt;</code>. <code>make up</code> deploys them.</p>
+
+<p>The application must allow verification of:</p>
+
+<ul>
+<li>Liveness<br><span class="answer"><strong>Partially implemented.</strong> The API has a liveness probe on <code>/health</code>. The web container has only a readiness probe.</span></li>
+<li>Readiness<br><span class="answer"><strong>Implemented.</strong> Readiness probes on the API (<code>/health</code>) and the web (<code>/</code>). Only ready pods get traffic.</span></li>
+<li>Current version<br><span class="answer"><strong>Partially implemented.</strong> The image tag identifies the version. The API does not report its own version, and <code>make test</code> checks the tag.</span></li>
+<li>Successful HTTP traffic<br><span class="answer"><strong>Implemented.</strong> <code>make test</code> calls the web and the API through ingress on every worker.</span></li>
+</ul>
+
+<p>It must also:</p>
+
+<ul>
+<li>Run multiple replicas.<br><span class="answer"><strong>Implemented.</strong> The API and web each run 2 replicas. A PodDisruptionBudget with <code>minAvailable: 1</code> covers each.</span></li>
+<li>Define resource requests and limits.<br><span class="answer"><strong>Implemented in the chart.</strong> API: 50m CPU and 64Mi memory requested, 256Mi limit. Web: 10m and 16Mi requested, 64Mi limit. PostgreSQL: 100m and 128Mi requested, 512Mi limit. <code>make test</code> does not check these yet.</span></li>
+<li>Run without unnecessary privileges.<br><span class="answer"><strong>Partially implemented.</strong> The API, web, and migrate pods run as non-root with a read-only root filesystem, no privilege escalation, all capabilities dropped, and the RuntimeDefault seccomp profile. PostgreSQL still runs as root. The check is in <code>make test</code> but has not been run on the cluster yet.</span></li>
+<li>Handle startup and termination gracefully.<br><span class="answer"><strong>Partially implemented.</strong> The API handles SIGTERM with a 10s shutdown. The pod exercise showed a clean stop. The chart sets no <code>terminationGracePeriodSeconds</code> or <code>preStop</code> hook.</span></li>
+<li>Route traffic only to healthy instances.<br><span class="answer"><strong>Implemented.</strong> Readiness probes gate the Service endpoints. The pod exercise recorded 0 failed samples with 2 replicas.</span></li>
+<li>Remain available during a normal rolling update.<br><span class="answer"><strong>Partially implemented.</strong> Two replicas and a PDB are in place. A rolling update has not been tested on the cluster. The Deployments have no explicit <code>maxSurge</code> or <code>maxUnavailable</code>.</span></li>
+<li>Be reachable through the selected ingress approach.<br><span class="answer"><strong>Implemented.</strong> F5 NGINX Ingress on NodePorts 30080 and 30443. Hosts <code>baseapp.local</code> (web) and <code>api.baseapp.local</code> (API).</span></li>
+<li>Be traceable to an immutable artifact and source revision.<br><span class="answer"><strong>Implemented.</strong> Each image is tagged with the full commit SHA and the release tag. <code>make app up</code> resolves the tag to its commit and checks it.</span></li>
+</ul>
+
+<p>Mutable-only tags such as <code>latest</code> are not acceptable.</p>
+<p class="answer"><strong>Implemented.</strong> The chart uses only commit and release tags. CI sets <code>latest=false</code>, and <code>make test</code> rejects <code>latest</code>.</p>
+
+<p>Writing the application and exposing application metrics are optional.</p>
+<p class="answer"><strong>Out of scope.</strong> The sample app is used. No application metrics are exposed.</p>
+
+<hr>
+
+<h2>5. CI/CD, Deployment, and Rollback Design</h2>
+
+<blockquote>A working GitLab pipeline, production deployment workflow, and rollback implementation are <strong>not required</strong>.</blockquote>
+
+<p>Document a design specific to the submitted platform and detailed enough to implement without making new major architectural decisions.</p>
+<p class="answer"><strong>Designed.</strong> <code>docs/ci-cd.md</code>, <code>docs/rollback.md</code>, and <code>docs/observability.md</code>.</p>
+
+<h3>CI/CD</h3>
+
+<p>Describe:</p>
+
+<ul>
+<li>Pipeline triggers and blocking checks<br><span class="answer"><strong>Implemented.</strong> <code>.github/workflows/ci-cd.yml</code> runs on pushes to <code>main</code>, <code>v*-release</code> tags, pull requests, and manual dispatch. The backend <code>go vet</code> and <code>go test</code>, and the web typecheck, must pass before images build.</span></li>
+<li>Application, infrastructure, and Kubernetes validation<br><span class="answer"><strong>Partially implemented.</strong> Application checks run in CI, but the backend has no test files. Infrastructure and Kubernetes validation run through <code>make test</code> on the live cluster, not in CI.</span></li>
+<li>Secret, dependency, and image scanning<br><span class="answer"><strong>Partially implemented.</strong> <code>make test</code> scans tracked files for secret patterns. Dependency and image scanning are not built.</span></li>
+<li>Immutable image publication<br><span class="answer"><strong>Implemented.</strong> Images are tagged with the full commit SHA and the release tag.</span></li>
+<li>Release creation and environment promotion<br><span class="answer"><strong>Partially implemented.</strong> Release tags are created by hand. Promotion is done by setting <code>APP_RELEASE</code>. There are no environments.</span></li>
+<li>Approval and verification controls<br><span class="answer"><strong>Designed but not implemented.</strong> No GitHub environment or approval gate. Verification is <code>make test</code>, run by hand.</span></li>
+<li>Credential protection<br><span class="answer"><strong>Partially implemented.</strong> The Docker Hub token is a GitHub secret, and the <code>images</code> job has <code>contents: read</code>. The deploy uses the controller's admin kubeconfig.</span></li>
+<li>Artifact traceability<br><span class="answer"><strong>Implemented.</strong> The commit SHA and the release tag are on every image.</span></li>
+<li>Failure handling<br><span class="answer"><strong>Partially implemented.</strong> <code>concurrency</code> cancels superseded runs. There is no retry or notification.</span></li>
+</ul>
+
+<p>Explain how artifacts would be promoted without rebuilding and how build permissions would be separated from deployment permissions.</p>
+<p class="answer"><strong>Designed but not implemented.</strong> <code>docs/ci-cd.md</code>: promote by retagging a digest that <code>main</code> already built, and keep the build identity and the deploy identity separate. Today CI rebuilds the images when a release tag is pushed.</p>
+
+<h3>Deployment</h3>
+
+<p>Describe:</p>
+
+<ul>
+<li>The source of desired state<br><span class="answer"><strong>Implemented.</strong> The Helm chart in <code>app/chart/</code> plus the values Ansible renders at deploy time.</span></li>
+<li>Resource ownership and drift handling<br><span class="answer"><strong>Partially implemented.</strong> Ansible owns the Secret and Helm owns the chart. Drift is not detected.</span></li>
+<li>Environment-specific configuration<br><span class="answer"><strong>Partially implemented.</strong> Cluster settings are in <code>group_vars</code>. There is only one environment.</span></li>
+<li>Secret delivery<br><span class="answer"><strong>Implemented.</strong> Secrets are generated under <code>ansible/.secrets/app/</code>, which is gitignored. Ansible applies them as a Kubernetes Secret with <code>no_log</code>. The chart reads the Secret by name.</span></li>
+<li>Deployment strategy<br><span class="answer"><strong>Partially implemented.</strong> A rolling update through the Deployments. No explicit <code>maxSurge</code> or <code>maxUnavailable</code>.</span></li>
+<li>Availability and health verification<br><span class="answer"><strong>Implemented.</strong> <code>helm upgrade --wait --timeout 10m</code>, then <code>rollout status</code> for both Deployments, then <code>make test</code>.</span></li>
+<li>Promotion and approval controls<br><span class="answer"><strong>Designed but not implemented.</strong> See the CI/CD section.</span></li>
+<li>Failed-deployment behavior<br><span class="answer"><strong>Partially implemented.</strong> <code>--wait</code> makes Helm fail on unhealthy pods. There is no automatic rollback. The migrate Job has <code>backoffLimit: 5</code>.</span></li>
+</ul>
+
+<p>The same resource must not be continuously managed by conflicting systems.</p>
+<p class="answer"><strong>Partially implemented.</strong> No GitOps controller runs, so nothing reconciles the chart in the background. The earlier <code>rollout restart</code> was a second writer on each run, and it has been removed.</p>
+
+<h3>Rollback</h3>
+
+<p>Describe:</p>
+
+<ul>
+<li>How the last healthy release is identified<br><span class="answer"><strong>Designed but not implemented.</strong> <code>docs/rollback.md</code>: Helm history plus the last deploy that passed <code>make test</code>. No deploy log is kept yet.</span></li>
+<li>How previous artifacts and configuration remain available<br><span class="answer"><strong>Implemented.</strong> Old tags stay on Docker Hub. Helm history keeps each revision's values.</span></li>
+<li>What initiates rollback<br><span class="answer"><strong>Designed but not implemented.</strong> <code>docs/rollback.md</code> lists the triggers: a failed <code>make test</code>, a rise in 5xx after deploy, or a rollout that misses its timeout. The operator decides.</span></li>
+<li>Which system performs it<br><span class="answer"><strong>Designed but not implemented.</strong> The preferred path is <code>make app up APP_RELEASE=&lt;previous&gt;</code>. The emergency path is <code>helm rollback</code>, which has not been run.</span></li>
+<li>Required permissions and approvals<br><span class="answer"><strong>Designed but not implemented.</strong> Rollback uses the admin kubeconfig today. Production would give it its own role.</span></li>
+<li>How recovery is observed and verified<br><span class="answer"><strong>Designed but not implemented.</strong> <code>make test</code> after the rollback, plus the dashboards in <code>docs/observability.md</code>.</span></li>
+<li>What happens if rollback fails<br><span class="answer"><strong>Designed but not implemented.</strong> Stop, escalate, and keep the old tags' images, which are never deleted.</span></li>
+</ul>
+
+<p>Also address incompatible configuration, Kubernetes resource changes, and database migrations where applicable.</p>
+<p class="answer"><strong>Designed but not implemented.</strong> Migrations are forward-only, and <code>helm rollback</code> does not run them. The production rule is expand and contract. The emergency rollback is safe only when the schema has not changed.</p>
+
+<p>Rollback must not depend on rebuilding an old artifact, mutable tags, or undocumented manual reconstruction.</p>
+<p class="answer"><strong>Implemented in principle.</strong> The old tags exist, and no rebuild is needed. The rollback path has not been tested.</p>
+
+<hr>
+
+<h2>6. Operational Visibility</h2>
+
+<p>The implementation must make it possible to inspect:</p>
+
+<ul>
+<li>Kubernetes node, pod, and workload status<br><span class="answer"><strong>Implemented.</strong> <code>make k8s status</code> and <code>kubectl</code>.</span></li>
+<li>Liveness and readiness state<br><span class="answer"><strong>Implemented.</strong> Shown by <code>kubectl describe</code> and <code>kubectl get pods</code>. <code>make failure</code> reads readiness.</span></li>
+<li>Application and container logs<br><span class="answer"><strong>Implemented.</strong> <code>kubectl logs</code>. The API logs JSON through zerolog. Logs are not collected off the nodes.</span></li>
+<li>Kubernetes events<br><span class="answer"><strong>Implemented.</strong> <code>kubectl get events</code>. <code>make failure</code> prints the events for each exercise.</span></li>
+<li>Application version<br><span class="answer"><strong>Partially implemented.</strong> The image tag only. The app does not report its version.</span></li>
+<li>Relevant conditions during the failure exercise<br><span class="answer"><strong>Implemented.</strong> Both exercises report pod counts, node Ready state, events, and the outage window.</span></li>
+</ul>
+
+<p>A dedicated metrics, monitoring, dashboarding, or alerting platform is optional.</p>
+<p class="answer"><strong>Out of scope.</strong> Not built.</p>
+
+<p>Document how production observability would address:</p>
+
+<ul>
+<li>Application and platform signals<br><span class="answer"><strong>Designed but not implemented.</strong> <code>docs/observability.md</code>: the golden signals for the ingress, the workloads, the nodes, Longhorn, PostgreSQL, and Cilium.</span></li>
+<li>Metrics and log collection<br><span class="answer"><strong>Designed but not implemented.</strong> Prometheus with ServiceMonitors, and a node agent that ships logs to Loki.</span></li>
+<li>Dashboards and alerting<br><span class="answer"><strong>Designed but not implemented.</strong> Four dashboards, and an alert table with severities and a Watchdog.</span></li>
+<li>Deployment health<br><span class="answer"><strong>Designed but not implemented.</strong> A deploy dashboard showing the running release, the rollout progress, and the restart count.</span></li>
+<li>SLOs and error budgets<br><span class="answer"><strong>Designed but not implemented.</strong> A proposed 99.5% availability target over 30 days, with burn-rate alerts.</span></li>
+<li>Retention and access control<br><span class="answer"><strong>Designed but not implemented.</strong> 15 days for metrics and 14 days for logs. Grafana with SSO, and Prometheus reachable only inside the cluster.</span></li>
+<li>Failure of the observability platform itself<br><span class="answer"><strong>Designed but not implemented.</strong> A Watchdog alert that goes to an external service, which pages when it goes silent.</span></li>
+</ul>
+
+<hr>
+
+<h2>7. Security</h2>
+
+<p>The solution must demonstrate:</p>
+
+<ul>
+<li>No plaintext credentials, tokens, private keys, or sensitive kubeconfigs in Git<br><span class="answer"><strong>Implemented.</strong> <code>make test</code> scans tracked files. <code>ansible/.gitignore</code> ignores <code>.secrets/</code>, and the root <code>.gitignore</code> ignores <code>.vagrant/</code>.</span></li>
+<li>Least-privilege access<br><span class="answer"><strong>Partially implemented.</strong> Automation uses <code>admin.conf</code>, which is cluster-admin. There is no scoped service account for the automation or the app. This is not least privilege.</span></li>
+<li>Workloads without unnecessary privileges<br><span class="answer"><strong>Partially implemented.</strong> See section 4. PostgreSQL still runs as root.</span></li>
+<li>Traceable images and dependencies<br><span class="answer"><strong>Partially implemented.</strong> Images are tagged by commit and release, and the Go and npm lock files are used. There is no SBOM and no scanning.</span></li>
+<li>Protection of sensitive values from logs<br><span class="answer"><strong>Implemented.</strong> <code>no_log: true</code> on the secret generation, render, and apply tasks in the app role, and on the kubeadm and HAProxy tasks.</span></li>
+<li>Documented trust and access boundaries<br><span class="answer"><strong>Partially implemented.</strong> The README and the role READMEs describe the secrets and the access. There is no single trust-boundary document.</span></li>
+</ul>
+
+<p>Clearly distinguish between:</p>
+
+<ul>
+<li>Controls implemented locally<br><span class="answer"><strong>Implemented.</strong> Listed in the security items above and in the README.</span></li>
+<li>Controls proposed for production<br><span class="answer"><strong>Designed but not implemented.</strong> The README "Local simplifications and production design" table, and <code>docs/ci-cd.md</code>.</span></li>
+<li>Risks accepted because of local constraints<br><span class="answer"><strong>Partially implemented.</strong> The failure exercise doc lists its remaining risks. There is no single accepted-risk list.</span></li>
+</ul>
+
+<hr>
+
+<h2>8. Failure Exercise</h2>
+
+<p>Demonstrate at least one meaningful failure, such as:</p>
+
+<ul>
+<li>Application process or readiness failure<br><span class="answer"><strong>Implemented.</strong> <code>make failure pod</code> deletes an API pod.</span></li>
+<li>Worker-node failure<br><span class="answer"><strong>Implemented.</strong> <code>make failure node</code> powers off a worker.</span></li>
+<li>Resource exhaustion<br><span class="answer"><strong>Not done.</strong></span></li>
+<li>Ingress failure<br><span class="answer"><strong>Not done.</strong></span></li>
+<li>Dependency or storage failure<br><span class="answer"><strong>Not done.</strong></span></li>
+</ul>
+
+<p>Document:</p>
+
+<ul>
+<li>Expected and observed behavior<br><span class="answer"><strong>Implemented.</strong> <code>docs/failure-exercise.md</code>.</span></li>
+<li>Detection method<br><span class="answer"><strong>Implemented.</strong> The exercise samples the API through ingress. Events and pod status confirm the result.</span></li>
+<li>User impact<br><span class="answer"><strong>Implemented.</strong> Pod exercise: 0 failed samples with 2 replicas. Node exercise: 11 of 346 and 29 of 698 sampled requests failed, starting a few seconds after the power-off.</span></li>
+<li>Recovery mechanism<br><span class="answer"><strong>Implemented.</strong> Pod: the Deployment replaces the pod, and readiness gates traffic. Node: NotReady, then eviction after 300s, then replacement pods on the surviving workers.</span></li>
+<li>Remaining risks<br><span class="answer"><strong>Implemented.</strong> Listed in <code>docs/failure-exercise.md</code>: no anti-affinity was in place at the time of the exercise, the 300s eviction delay, Longhorn settling after reboot, and the simulated power-off.</span></li>
+<li>How production behavior would differ<br><span class="answer"><strong>Implemented.</strong> Listed in <code>docs/failure-exercise.md</code>.</span></li>
+</ul>
+
+<p>Kubernetes status, events, probes, and logs are sufficient. A monitoring platform is not mandatory.</p>
+<p class="answer"><strong>Implemented.</strong> The exercises use status, events, probes, and logs only.</p>
+
+<hr>
+
+<h2>9. Single-Command Acceptance Test</h2>
+
+<p>Provide one documented command that runs the complete automated acceptance test, for example:</p>
+
+<pre><code>make test</code></pre>
+
+<p>The command name and implementation are the candidate's choice.</p>
+<p class="answer"><strong>Implemented.</strong> <code>make test</code>. It is documented in the README.</p>
+
+<p>It must return a clear pass/fail result, identify failed checks, and verify at least:</p>
+
+<ul>
+<li>Virtual machines are reachable.<br><span class="answer"><strong>Implemented.</strong> Ping of every VM.</span></li>
+<li>Expected Kubernetes nodes are healthy.<br><span class="answer"><strong>Implemented.</strong> All nodes Ready.</span></li>
+<li>Required cluster services are operational.<br><span class="answer"><strong>Implemented.</strong> Cilium agents, Longhorn managers and pods, the Longhorn StorageClass, and the ingress controller.</span></li>
+<li>Pod networking and cluster DNS work.<br><span class="answer"><strong>Implemented.</strong> DNS resolves the app Services. The API and web answer pod-to-pod. The API reaches PostgreSQL pod-to-pod.</span></li>
+<li>The application is reachable through ingress.<br><span class="answer"><strong>Implemented.</strong> The web and the API health endpoint answer on every worker.</span></li>
+<li>Expected application replicas are ready.<br><span class="answer"><strong>Implemented.</strong> API, web, and PostgreSQL readiness.</span></li>
+<li>Health checks work.<br><span class="answer"><strong>Implemented.</strong> The ingress <code>/health</code> check.</span></li>
+<li>The application reports an immutable version.<br><span class="answer"><strong>Partially implemented.</strong> The image tag is checked for immutability. The app does not report its version, so that is not checked.</span></li>
+<li>Required node tuning is present.<br><span class="answer"><strong>Implemented.</strong> Each sysctl, the file-descriptor limit, the journal cap, and the kernel modules are checked on every VM. The kubelet settings are not checked.</span></li>
+<li>Workload resource and security controls are applied.<br><span class="answer"><strong>Partially implemented.</strong> The API and web security context is checked. Resource requests and limits are not checked, and PostgreSQL is not checked. The security check has not been run on the cluster yet.</span></li>
+<li>No known plaintext secrets exist in the repository.<br><span class="answer"><strong>Implemented.</strong> The tracked files are scanned for secret patterns and secret file names.</span></li>
+</ul>
+
+<p>The evaluator must not need undocumented commands or manual inspection.</p>
+<p class="answer"><strong>Implemented.</strong> Each step is in the README and the Makefile.</p>
+
+<p>CI/CD, rollback, HPA, and monitoring checks are outside the required acceptance test.</p>
+<p class="answer"><strong>Out of scope</strong> for <code>make test</code>.</p>
+
+<hr>
+
+<h2>10. Documentation</h2>
+
+<p>Documentation must include:</p>
+
+<ul>
+<li>Build, test, troubleshooting, destruction, and recreation instructions<br><span class="answer"><strong>Implemented.</strong> README: Usage, Other commands, and Troubleshooting. <code>make vm destroy</code> destroys, and <code>make up</code> recreates.</span></li>
+<li>At least one architecture and traffic-flow diagram<br><span class="answer"><strong>Implemented.</strong> The README section "Architecture and traffic flow" has a Mermaid diagram of the client path and the control path. It has not been rendered in this review.</span></li>
+<li>Important decisions, alternatives, and trade-offs<br><span class="answer"><strong>Partially implemented.</strong> The README local-choices table and the role READMEs. There is no central decisions record.</span></li>
+<li>Security and operational consequences<br><span class="answer"><strong>Partially implemented.</strong> Spread across the README and the role READMEs.</span></li>
+<li>Resource-ownership boundaries<br><span class="answer"><strong>Partially implemented.</strong> See section 2.</span></li>
+<li>Local limitations and production evolution<br><span class="answer"><strong>Implemented.</strong> README "Local simplifications and production design".</span></li>
+<li>CI/CD, deployment, rollback, and production-observability designs<br><span class="answer"><strong>Designed but not implemented.</strong> <code>docs/ci-cd.md</code>, <code>docs/rollback.md</code>, and <code>docs/observability.md</code>.</span></li>
+</ul>
+
+<p>Clearly label capabilities as:</p>
+
+<ul>
+<li><strong>Implemented</strong></li>
+<li><strong>Designed but not implemented</strong></li>
+<li><strong>Out of scope</strong></li>
+</ul>
+<p class="answer">This file and the README use these labels.</p>
+
+<p>The production discussion should address relevant topics such as high availability, failure domains, storage, capacity, secrets, backup and restore, upgrades, network security, observability, disaster recovery, and environment isolation.</p>
+<p class="answer"><strong>Partially implemented.</strong> High availability, storage, secrets, and observability are covered in the README and the <code>docs/</code> designs. Failure domains, capacity, network security, and the rest are not covered in depth. Backup and restore, upgrades, disaster recovery, and environment isolation are not covered.</p>
+
+<hr>
+
+<h2>11. Bonus Objectives</h2>
+
+<h3>Application-level autoscaling</h3>
+
+<p>Use an HTTP or application-level metric and demonstrate:</p>
+
+<ul>
+<li>Metric collection and autoscaler integration<br><span class="answer"><strong>Not done.</strong></span></li>
+<li>Scale-out under load<br><span class="answer"><strong>Not done.</strong></span></li>
+<li>Controlled scale-in<br><span class="answer"><strong>Not done.</strong></span></li>
+<li>Stable scaling boundaries<br><span class="answer"><strong>Not done.</strong></span></li>
+<li>Behavior when the metrics source is unavailable<br><span class="answer"><strong>Not done.</strong></span></li>
+</ul>
+
+<p>CPU-only HPA receives partial credit.</p>
+
+<h3>Monitoring and alerting</h3>
+
+<p>Implement monitoring or alerting that detects or explains a meaningful failure. Document ownership, retention, access, resource cost, and failure behavior.</p>
+<p class="answer"><strong>Designed but not implemented.</strong> <code>docs/observability.md</code> covers retention, access, and failure behavior. Ownership and resource cost are not written.</p>
+
+<h3>Production-oriented database</h3>
+
+<p>Implement a stateful database with:</p>
+
+<ul>
+<li>Persistent storage<br><span class="answer"><strong>Implemented.</strong> A PostgreSQL StatefulSet on a 5 GiB Longhorn PVC.</span></li>
+<li>Secure credentials<br><span class="answer"><strong>Partially implemented.</strong> The password is generated and kept in the Secret. PostgreSQL runs as root.</span></li>
+<li>Resource and connection controls<br><span class="answer"><strong>Partially implemented.</strong> Resource requests and limits are set. There are no connection limits.</span></li>
+<li>Schema-migration strategy<br><span class="answer"><strong>Partially implemented.</strong> A migrate Job runs after each install or upgrade. There is no down-migration.</span></li>
+<li>Failure and disruption handling<br><span class="answer"><strong>Not done.</strong></span></li>
+<li>Backup and demonstrated restoration<br><span class="answer"><strong>Not done.</strong> Longhorn backups are disabled.</span></li>
+<li>Defined recovery objectives<br><span class="answer"><strong>Not done.</strong></span></li>
+</ul>
+
+<p>A database without a tested restore path does not qualify.</p>
+<p class="answer"><strong>Not qualified.</strong> There is no tested restore path.</p>
+
+<h3>Candidate-developed application</h3>
+
+<p>Additional credit is available for a small application with tests, structured logging, graceful shutdown, version information, secure container construction, and dependency timeout handling.</p>
+<p class="answer"><strong>Not done as a bonus.</strong> The app is the sample app. The backend has no test files. It has structured logging and graceful shutdown, but no version information and no dependency timeouts. Its container is non-root.</p>
+
+<hr>
+
+<h2>12. Constraints</h2>
+
+<p>The solution must not rely on:</p>
+
+<ul>
+<li>Manually prepared virtual machines<br><span class="answer"><strong>Met.</strong> Vagrant creates the VMs.</span></li>
+<li>Repeated manual bootstrap steps<br><span class="answer"><strong>Met for the platform.</strong> <code>make up</code> runs once. The operator enters the sudo password for <code>make host-setup</code> and <code>make app up</code>.</span></li>
+<li>Mutable-only image tags<br><span class="answer"><strong>Met.</strong> Commit and release tags.</span></li>
+<li>Plaintext secrets<br><span class="answer"><strong>Met.</strong> Scanned by <code>make test</code>.</span></li>
+<li>Undocumented operator knowledge<br><span class="answer"><strong>Partially met.</strong> The Docker Hub source of the app images is not documented as a behavior. The sudo-rs note is in the host_setup README.</span></li>
+<li>Conflicting resource ownership<br><span class="answer"><strong>Partially met.</strong> See section 2.</span></li>
+<li>A single-node development cluster represented as multi-node<br><span class="answer"><strong>Met.</strong> 3 control planes and 3 workers.</span></li>
+<li>Unsupported claims of production readiness<br><span class="answer"><strong>Met.</strong> The README names the local simplifications.</span></li>
+</ul>
+
+<p>Third-party components are permitted when their versions, role, and operational implications are controlled and documented.</p>
+<p class="answer"><strong>Partially met.</strong> Versions are pinned in <code>group_vars</code>, and each role README gives the role. The app images use Docker Hub, not the registry mirror, which the README does not state.</p>
+
+<hr>
+
+<h2>13. Evaluation</h2>
+
+<table>
+<thead>
+<tr><th>Area</th><th>Weight</th><th>Where it is addressed</th></tr>
+</thead>
+<tbody>
+<tr><td>Automation, reproducibility, and idempotency</td><td>25%</td><td><span class="answer">Sections 1 and 2. <code>make up</code>, the Ansible roles, and the idempotency items are partly unverified.</span></td></tr>
+<tr><td>Kubernetes and infrastructure architecture</td><td>20%</td><td><span class="answer">Sections 2 and 4. README topology and architecture diagram.</span></td></tr>
+<tr><td>Production-oriented tuning</td><td>15%</td><td><span class="answer">Section 3. The kubelet settings are written but not applied.</span></td></tr>
+<tr><td>Security and secrets management</td><td>10%</td><td><span class="answer">Section 7. Least privilege and PostgreSQL are open.</span></td></tr>
+<tr><td>Acceptance testing and failure handling</td><td>10%</td><td><span class="answer">Sections 8 and 9.</span></td></tr>
+<tr><td>CI/CD, deployment, rollback, and observability design</td><td>10%</td><td><span class="answer">Sections 5 and 6, and <code>docs/</code>. The designs are not built.</span></td></tr>
+<tr><td>Documentation and technical decisions</td><td>10%</td><td><span class="answer">Section 10. README, role READMEs, and <code>docs/</code>.</span></td></tr>
+<tr><td><strong>Total</strong></td><td><strong>100%</strong></td><td></td></tr>
+</tbody>
+</table>
+
+<p>Bonus work does not compensate for an incomplete core solution.</p>
+
+<hr>
+
+<h2>14. Demonstration</h2>
+
+<p>Be prepared to demonstrate:</p>
+
+<ol>
+<li>Automated environment creation<br><span class="answer"><strong>Available</strong> through <code>make up</code>. A full destroy and recreate has not been run in this review.</span></li>
+<li>Idempotent automation re-execution<br><span class="answer"><strong>Partially available.</strong> <code>make k8s up</code> is designed for it. A re-run after the kubelet changes has not been done in this review.</span></li>
+<li>The single-command acceptance test<br><span class="answer"><strong>Available.</strong> <code>make test</code> passes on the live cluster after the latest <code>make app up</code>. The security check is not yet run.</span></li>
+<li>Application access and version identification<br><span class="answer"><strong>Available.</strong> The web and API hosts through the ingress. The version is the image tag. The app does not report it.</span></li>
+<li>Applied production tuning<br><span class="answer"><strong>Partially available.</strong> The node tuning is applied. The kubelet settings are written and not yet applied.</span></li>
+<li>The selected failure exercise<br><span class="answer"><strong>Available.</strong> <code>make failure pod</code> and <code>make failure node</code>.</span></li>
+<li>Major architecture decisions and trade-offs<br><span class="answer"><strong>Available</strong> in the README and the role READMEs.</span></li>
+<li>Production evolution<br><span class="answer"><strong>Available</strong> in the README table.</span></li>
+<li>Proposed CI/CD, deployment, rollback, and observability designs<br><span class="answer"><strong>Available</strong> in <code>docs/ci-cd.md</code>, <code>docs/rollback.md</code>, and <code>docs/observability.md</code>.</span></li>
+</ol>
+
+<p>A live GitLab pipeline, rollback, HPA, or monitoring platform is not required.</p>
+
+</body>
+</html>
