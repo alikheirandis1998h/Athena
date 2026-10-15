@@ -41,9 +41,3 @@ all:
               ansible_host: 192.168.56.23
               vm_cpus: 2
               vm_memory: 3072
-        storage:
-          hosts:
-            athena-minio:
-              ansible_host: 192.168.56.31
-              vm_cpus: 1
-              vm_memory: 1024

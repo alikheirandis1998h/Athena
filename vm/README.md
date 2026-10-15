@@ -2,7 +2,7 @@
 
 Local Vagrant VMs for the platform, using the libvirt provider.
 
-**Implemented:** seven VMs (`athena-cp-1..3`, `athena-worker-1..3`, `athena-minio`) defined from `ansible/inventories/hosts.yaml`, with the box pinned in `vm.env`.
+**Implemented:** six VMs (`athena-cp-1..3`, `athena-worker-1..3`) defined from `ansible/inventories/hosts.yaml`, with the box pinned in `vm.env`.
 
 **Out of scope:** configuring the VMs for Kubernetes. That is `make k8s up`, which runs after the VMs are up.
 
