@@ -73,10 +73,6 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   changed_when: true
 
-- name: Restart the app pods so they pull the current images for this commit
-  ansible.builtin.command: kubectl --kubeconfig /etc/kubernetes/admin.conf -n {{ app_namespace }} rollout restart deployment/app-api deployment/app-web
-  changed_when: true
-
 - name: Wait for the app rollouts
   ansible.builtin.command: kubectl --kubeconfig /etc/kubernetes/admin.conf -n {{ app_namespace }} rollout status deployment/{{ item }} --timeout=5m
   loop:
