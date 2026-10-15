@@ -1,13 +1,13 @@
 include vm/vm.env
 export
 
-.PHONY: host-setup vm k8s app up down status destroy deploy
+.PHONY: host-setup vm k8s app test up down status destroy deploy
 
 VM_ACTIONS := up down status destroy
 APP_ACTIONS := deploy
 
-# The commit that CI built the images from. Images are tagged api-<sha> and web-<sha>.
-APP_SHA ?= $(shell git rev-parse HEAD)
+# Release to deploy, as a vX.Y.Z-release tag. Defaults to the latest such tag.
+APP_RELEASE ?= $(shell git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*-release' 2>/dev/null)
 
 host-setup:
 	cd ansible && ansible-playbook playbooks/host-setup.yaml --ask-become-pass
@@ -30,9 +30,12 @@ k8s:
 
 app:
 	@case "$(word 2,$(MAKECMDGOALS))" in \
-		deploy) cd ansible && ansible-playbook playbooks/app-deploy.yaml --ask-become-pass -e app_release_sha=$(APP_SHA) ;; \
-		*) echo "usage: make app deploy [APP_SHA=<commit sha>]" >&2; exit 2 ;; \
+		deploy) cd ansible && ansible-playbook playbooks/app-deploy.yaml --ask-become-pass -e app_release_sha=$$(git rev-parse --verify "$(APP_RELEASE)^{commit}") -e app_release_tag=$(APP_RELEASE) ;; \
+		*) echo "usage: make app deploy [APP_RELEASE=vX.Y.Z]" >&2; exit 2 ;; \
 	esac
+
+test:
+	cd ansible && ansible-playbook playbooks/acceptance-test.yaml
 
 $(VM_ACTIONS):
 	@$(if $(filter vm k8s,$(MAKECMDGOALS)),,echo "usage: make vm|k8s $@" >&2; exit 2)

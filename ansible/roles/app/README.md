@@ -2,7 +2,9 @@
 
 Deploys the sample app (`app/`) to the cluster with the Helm chart in `app/chart`. Runs on the first control-plane node.
 
-Run it with `make app deploy APP_SHA=<commit sha>`. The SHA must be the commit CI built, because the images are tagged `api-<sha>` and `web-<sha>`. It defaults to `HEAD`.
+Run it with `make app deploy APP_RELEASE=vX.Y.Z-release`. The release is a tag named `vMAJOR.MINOR.PATCH-release` on a commit that CI built. The Makefile resolves the tag to its commit and passes both to Ansible. The images are still tagged `api-<sha>` and `web-<sha>`, because CI names them by commit. If `APP_RELEASE` is not given, it defaults to the latest `v*-release` tag reachable from HEAD.
+
+Create a release with `git tag -a vX.Y.Z-release <commit> -m "..."`. Push the tag when it is ready to share.
 
 ## What it does
 

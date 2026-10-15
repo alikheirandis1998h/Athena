@@ -1,0 +1,128 @@
+---
+# Single-command acceptance test (make test). Each group fails with the names of its failed checks.
+
+- name: Check that the VMs are reachable
+  hosts: kubernetes
+  gather_facts: false
+  tasks:
+    - name: Ping each VM
+      ansible.builtin.ping:
+
+- import_playbook: k8s-status.yaml
+
+- name: Check the node tuning
+  hosts: kubernetes
+  gather_facts: false
+  vars_files:
+    - ../roles/node_tuning/defaults/main.yml
+  tasks:
+    - name: Read the tuning state
+      ansible.builtin.shell: |
+        {% for item in node_tuning_sysctl | dict2items %}
+        [ "$(sysctl -n {{ item.key }} 2>/dev/null)" = "{{ item.value }}" ] || echo "sysctl {{ item.key }}"
+        {% endfor %}
+        [ "$(awk '/Max open files/ {print $4}' /proc/1/limits)" = "{{ node_tuning_nofile_limit }}" ] || echo "nofile limit"
+        grep -qx 'SystemMaxUse={{ node_tuning_journal_max_use }}' /etc/systemd/journald.conf.d/athena.conf || echo "journal cap"
+        {% for module in node_tuning_kernel_modules %}
+        [ -d /sys/module/{{ module }} ] || echo "kernel module {{ module }}"
+        {% endfor %}
+      args:
+        executable: /bin/bash
+      register: tuning_state
+      changed_when: false
+
+    - name: Assert the node tuning is applied
+      ansible.builtin.assert:
+        that:
+          - tuning_state.stdout_lines | length == 0
+        fail_msg: "{{ inventory_hostname }} tuning mismatches: {{ tuning_state.stdout_lines | join(', ') }}"
+        success_msg: "{{ inventory_hostname }}: node tuning applied"
+
+- name: Check the application
+  hosts: control_plane[0]
+  become: true
+  gather_facts: false
+  vars:
+    kubectl: kubectl --kubeconfig /etc/kubernetes/admin.conf
+    app_namespace: app
+    app_web_host: baseapp.local
+    app_api_host: api.baseapp.local
+    app_ingress_nodeport: 30080
+    app_worker_ips: "{{ groups['workers'] | map('extract', hostvars, 'ansible_host') | list }}"
+    app_checks:
+      - name: API replicas ready
+        cmd: "test \"$({{ kubectl }} -n {{ app_namespace }} get deploy app-api -o jsonpath='{.status.readyReplicas}')\" = \"$({{ kubectl }} -n {{ app_namespace }} get deploy app-api -o jsonpath='{.spec.replicas}')\""
+      - name: Web replicas ready
+        cmd: "test \"$({{ kubectl }} -n {{ app_namespace }} get deploy app-web -o jsonpath='{.status.readyReplicas}')\" = \"$({{ kubectl }} -n {{ app_namespace }} get deploy app-web -o jsonpath='{.spec.replicas}')\""
+      - name: PostgreSQL ready
+        cmd: "test \"$({{ kubectl }} -n {{ app_namespace }} get statefulset app-postgres -o jsonpath='{.status.readyReplicas}')\" = 1"
+      - name: API image is an immutable api-<commit sha> tag
+        cmd: "imgs=\"$({{ kubectl }} -n {{ app_namespace }} get pods -l app=app-api -o jsonpath='{.items[*].spec.containers[*].image}')\"; test -n \"$imgs\" || exit 1; for img in $imgs; do echo \"$img\" | grep -Eq ':api-[0-9a-f]{40}$' || exit 1; done"
+      - name: Web image is an immutable web-<commit sha> tag
+        cmd: "imgs=\"$({{ kubectl }} -n {{ app_namespace }} get pods -l app=app-web -o jsonpath='{.items[*].spec.containers[*].image}')\"; test -n \"$imgs\" || exit 1; for img in $imgs; do echo \"$img\" | grep -Eq ':web-[0-9a-f]{40}$' || exit 1; done"
+      - name: Web reachable through ingress on every worker
+        cmd: "for ip in {{ app_worker_ips | join(' ') }}; do curl -fsS -o /dev/null -H 'Host: {{ app_web_host }}' http://$ip:{{ app_ingress_nodeport }}/ || exit 1; done"
+      - name: API health reachable through ingress on every worker
+        cmd: "for ip in {{ app_worker_ips | join(' ') }}; do curl -fsS -H 'Host: {{ app_api_host }}' http://$ip:{{ app_ingress_nodeport }}/health | grep -q '\"status\":\"ok\"' || exit 1; done"
+  tasks:
+    - name: Run the application checks
+      ansible.builtin.shell: "{{ item.cmd }}"
+      args:
+        executable: /bin/bash
+      loop: "{{ app_checks }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: app_results
+      changed_when: false
+      failed_when: false
+
+    - name: Print each application check
+      ansible.builtin.debug:
+        msg: "{{ item.item.name }}: {{ 'ok' if item.rc == 0 else 'FAILED' }}"
+      loop: "{{ app_results.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Fail when any application check failed
+      ansible.builtin.assert:
+        that:
+          - app_results.results | rejectattr('rc', 'equalto', 0) | list | length == 0
+        fail_msg: "Failed application checks: {{ app_results.results | rejectattr('rc', 'equalto', 0) | map(attribute='item.name') | join(', ') }}"
+        success_msg: "All application checks passed"
+
+- name: Scan the repository for plaintext secrets
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    secret_patterns:
+      - '-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----'
+      - 'AKIA[0-9A-Z]{16}'
+      - 'gh[pousr]_[A-Za-z0-9]{36}'
+      - 'xox[baprs]-[A-Za-z0-9-]{10,}'
+    secret_file_names: '(^|/)(\.secrets/|.*\.(pem|key|p12)$|admin\.conf$|kubeconfig)'
+  tasks:
+    - name: Find tracked files that contain secret patterns
+      ansible.builtin.shell: >-
+        git ls-files -z | xargs -0 -r grep -IlE {% for p in secret_patterns %}-e '{{ p }}' {% endfor %} || true
+      args:
+        chdir: "{{ playbook_dir }}/../.."
+        executable: /bin/bash
+      register: secret_content
+      changed_when: false
+
+    - name: Find tracked files that are secret files by name
+      ansible.builtin.shell: git ls-files | grep -E '{{ secret_file_names }}' || true
+      args:
+        chdir: "{{ playbook_dir }}/../.."
+        executable: /bin/bash
+      register: secret_names
+      changed_when: false
+
+    - name: Assert no plaintext secrets are tracked
+      ansible.builtin.assert:
+        that:
+          - secret_content.stdout_lines | length == 0
+          - secret_names.stdout_lines | length == 0
+        fail_msg: "Possible plaintext secrets in: {{ (secret_content.stdout_lines + secret_names.stdout_lines) | join(', ') }}"
+        success_msg: "No plaintext secrets found in tracked files"
