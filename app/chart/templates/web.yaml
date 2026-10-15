@@ -28,10 +28,29 @@ spec:
       labels:
         app: app-web
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.web.uid }}
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: app-web
       containers:
         - name: web
           image: {{ .Values.imageRepository }}:{{ required "web.tag is required" .Values.web.tag }}
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: http
               containerPort: {{ .Values.web.port }}
@@ -47,3 +66,13 @@ spec:
               memory: 16Mi
             limits:
               memory: 64Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}

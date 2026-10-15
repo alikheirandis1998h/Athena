@@ -61,6 +61,8 @@
         cmd: "imgs=\"$({{ kubectl }} -n {{ app_namespace }} get pods -l app=app-api -o jsonpath='{.items[*].spec.containers[*].image}')\"; test -n \"$imgs\" || exit 1; for img in $imgs; do echo \"$img\" | grep -Eq ':api-([0-9a-f]{40}|v[0-9]+\\.[0-9]+\\.[0-9]+-release)$' || exit 1; done"
       - name: Web image is an immutable web-<commit sha> or web-vX.Y.Z-release tag
         cmd: "imgs=\"$({{ kubectl }} -n {{ app_namespace }} get pods -l app=app-web -o jsonpath='{.items[*].spec.containers[*].image}')\"; test -n \"$imgs\" || exit 1; for img in $imgs; do echo \"$img\" | grep -Eq ':web-([0-9a-f]{40}|v[0-9]+\\.[0-9]+\\.[0-9]+-release)$' || exit 1; done"
+      - name: API and web pods run as non-root with a read-only root filesystem and no extra privileges
+        cmd: "for app in app-api app-web; do lines=\"$({{ kubectl }} -n {{ app_namespace }} get pods -l app=$app -o jsonpath='{range .items[*]}{.spec.securityContext.runAsNonRoot} {.spec.containers[0].securityContext.readOnlyRootFilesystem} {.spec.containers[0].securityContext.allowPrivilegeEscalation} {.spec.containers[0].securityContext.capabilities.drop[0]}{\"\\n\"}{end}')\"; test -n \"$lines\" || exit 1; echo \"$lines\" | grep -qv '^true true false ALL$' && exit 1; done; exit 0"
       - name: Web reachable through ingress on every worker
         cmd: "for ip in {{ app_worker_ips | join(' ') }}; do curl -fsS -o /dev/null -H 'Host: {{ app_web_host }}' http://$ip:{{ app_ingress_nodeport }}/ || exit 1; done"
       - name: API health reachable through ingress on every worker
@@ -70,7 +72,7 @@
       - name: API answers pod-to-pod through its Service
         cmd: "{{ kubectl }} -n {{ app_namespace }} run api-check-$(date +%s) --rm -i --restart=Never --image={{ app_test_image }} --command -- wget -q -O /dev/null -T 5 http://app-api.{{ app_namespace }}.svc.cluster.local:8080/health"
       - name: Web answers pod-to-pod through its Service
-        cmd: "{{ kubectl }} -n {{ app_namespace }} run web-check-$(date +%s) --rm -i --restart=Never --image={{ app_test_image }} --command -- wget -q -O /dev/null -T 5 http://app-web.{{ app_namespace }}.svc.cluster.local:80/"
+        cmd: "{{ kubectl }} -n {{ app_namespace }} run web-check-$(date +%s) --rm -i --restart=Never --image={{ app_test_image }} --command -- wget -q -O /dev/null -T 5 http://app-web.{{ app_namespace }}.svc.cluster.local:8080/"
       - name: API reaches PostgreSQL pod-to-pod through its Service
         cmd: "{{ kubectl }} -n {{ app_namespace }} run db-check-$(date +%s) --rm -i --restart=Never --image={{ app_test_image }} --command -- nc -z -w 5 app-postgres.{{ app_namespace }}.svc.cluster.local 5432"
   tasks:

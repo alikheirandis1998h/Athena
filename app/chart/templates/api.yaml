@@ -28,10 +28,29 @@ spec:
       labels:
         app: app-api
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.api.uid }}
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: app-api
       containers:
         - name: api
           image: {{ .Values.imageRepository }}:{{ required "api.tag is required" .Values.api.tag }}
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: http
               containerPort: {{ .Values.api.port }}

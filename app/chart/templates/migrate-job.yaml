@@ -18,11 +18,21 @@ spec:
         app: app-migrate
     spec:
       restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.api.uid }}
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         - name: copy-migrations
           image: {{ .Values.imageRepository }}:{{ required "api.tag is required" .Values.api.tag }}
           imagePullPolicy: Always
           command: ["sh", "-c", "cp -r /app/migrations /work/migrations"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: work
               mountPath: /work
@@ -30,6 +40,11 @@ spec:
         - name: migrate
           image: {{ .Values.migrate.image }}
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           args: ["-path", "/work/migrations", "-database", "$(DATABASE_URL)", "up"]
           env:
             - name: DATABASE_URL

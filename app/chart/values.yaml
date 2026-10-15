@@ -8,12 +8,14 @@ api:
   tag: ""          # set by Ansible to api-<commit sha>
   replicas: 2
   port: 8080
+  uid: 10001       # non-root user in the API image (app/backend/Dockerfile)
   minAvailable: 1  # PodDisruptionBudget: voluntary evictions keep at least one pod ready
 
 web:
   tag: ""          # set by Ansible to web-<commit sha>
   replicas: 2
-  port: 80
+  port: 8080       # nginx-unprivileged listens here (app/nginx.conf)
+  uid: 101         # nginx user in the nginx-unprivileged image
   minAvailable: 1
 
 postgres:
