@@ -1,0 +1,71 @@
+---
+# Failure exercise (make failure). Deletes the API pod, samples /health through ingress
+# once a second, and checks that the Deployment recovers within the time limit.
+# See docs/failure-exercise.md for the expected and observed behavior.
+
+- name: Delete the API pod and measure recovery
+  hosts: control_plane[0]
+  become: true
+  gather_facts: false
+  vars:
+    app_namespace: app
+    app_api_host: api.baseapp.local
+    app_ingress_nodeport: 30080
+    app_probe_ip: "{{ hostvars[groups['workers'][0]].ansible_host }}"
+    recovery_limit_seconds: 120
+  tasks:
+    - name: Delete one API pod and sample /health until it recovers
+      ansible.builtin.shell: |
+        set -u
+        K="kubectl --kubeconfig /etc/kubernetes/admin.conf -n {{ app_namespace }}"
+        POD=$($K get pods -l app=app-api -o jsonpath='{.items[0].metadata.name}')
+        echo "target pod: $POD"
+        echo "replicas: $($K get deploy app-api -o jsonpath='{.status.readyReplicas}/{.spec.replicas}') ready before the failure"
+
+        SAMPLES=$(mktemp)
+        DELETED_AT=$(date +%s)
+        $K delete pod "$POD" --wait=false >/dev/null
+
+        RECOVERED=no
+        for i in $(seq 1 {{ recovery_limit_seconds }}); do
+          code=$(curl -s -o /dev/null -m 1 -w '%{http_code}' -H 'Host: {{ app_api_host }}' http://{{ app_probe_ip }}:{{ app_ingress_nodeport }}/health)
+          echo "$(( $(date +%s) - DELETED_AT )) $code" >> "$SAMPLES"
+          ready=$($K get deploy app-api -o jsonpath='{.status.readyReplicas}')
+          if [ "$code" = 200 ] && [ "${ready:-0}" = "$($K get deploy app-api -o jsonpath='{.spec.replicas}')" ] && awk '$2 != 200 {found = 1} END {exit !found}' "$SAMPLES"; then
+            RECOVERED=yes
+            break
+          fi
+          sleep 1
+        done
+
+        FIRST_FAIL=$(awk '$2 != 200 {print $1; exit}' "$SAMPLES")
+        if [ -n "$FIRST_FAIL" ]; then
+          RECOVER_AT=$(awk -v f="$FIRST_FAIL" '$2 == 200 && $1 > f {print $1; exit}' "$SAMPLES")
+          echo "first failed sample: ${FIRST_FAIL}s after delete"
+          echo "outage: ${FIRST_FAIL}s to ${RECOVER_AT:-unknown}s, $(awk '$2 != 200' "$SAMPLES" | wc -l) failed samples"
+        else
+          echo "no failed samples observed"
+        fi
+        echo "samples taken: $(wc -l < "$SAMPLES")"
+        echo "new pod: $($K get pods -l app=app-api -o jsonpath='{.items[0].metadata.name}') ready $($K get deploy app-api -o jsonpath='{.status.readyReplicas}/{.spec.replicas}')"
+        echo "events for the deleted pod:"
+        $K get events --field-selector involvedObject.name="$POD" --sort-by=.lastTimestamp -o custom-columns=REASON:.reason,MESSAGE:.message --no-headers | tail -10
+        rm -f "$SAMPLES"
+
+        test "$RECOVERED" = yes
+      args:
+        executable: /bin/bash
+      register: exercise
+      changed_when: true
+      failed_when: false
+
+    - name: Show the exercise output
+      ansible.builtin.debug:
+        msg: "{{ exercise.stdout_lines }}"
+
+    - name: Assert the API recovered within the time limit
+      ansible.builtin.assert:
+        that:
+          - exercise.rc == 0
+        fail_msg: "The API did not recover within {{ recovery_limit_seconds }}s. See the output above."
+        success_msg: "The API recovered within {{ recovery_limit_seconds }}s"

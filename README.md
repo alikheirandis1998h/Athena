@@ -32,6 +32,9 @@ make host-setup     # once per controller: Vagrant, libvirt, and the libvirt ACL
 make vm up          # create and start the seven VMs
 make k8s up         # configure the VMs and bring up the cluster
 make k8s status     # validate the nodes and the cluster; fails if any check fails
+make app deploy     # deploy the sample app at the latest vX.Y.Z-release tag
+make test           # the full acceptance test; fails and names the failed checks
+make failure        # delete an API pod and measure recovery; see docs/failure-exercise.md
 ```
 
 Other commands:
@@ -88,13 +91,14 @@ The assignment requires these to be named. Each one is a deliberate local choice
 
 ## Current state and known gaps
 
-Done: VM provisioning, host preparation, node tuning, the highly available control plane, the worker join, Cilium, Longhorn storage, the F5 NGINX ingress, and the `k8s status` validation.
+Done: VM provisioning, host preparation, node tuning, the highly available control plane, the worker join, Cilium, Longhorn storage, the F5 NGINX ingress, the `k8s status` validation, the sample app with its tag-based deploy, `make test`, and the API pod failure exercise (`make failure`, see `docs/failure-exercise.md`).
 
 Not done yet (see `TaskDefinition.md`):
 
-- The sample HTTP application and its versioned deployment.
+- The app runs one replica, so any pod restart is a full outage. Two replicas and a PodDisruptionBudget are the fix.
+- The app does not run as non-root and has no `securityContext`.
 - The observability layer (metrics, dashboards, or alerting).
-- The failure exercise, and the scripted test that runs it.
+- Rollback and observability design write-ups.
 - Longhorn backups, which depend on porting the Silo role.
 - The Patroni and athena_app roles from the Athena project.
 

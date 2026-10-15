@@ -1,7 +1,7 @@
 include vm/vm.env
 export
 
-.PHONY: host-setup vm k8s app test up down status destroy deploy
+.PHONY: host-setup vm k8s app test failure up down status destroy deploy
 
 VM_ACTIONS := up down status destroy
 APP_ACTIONS := deploy
@@ -36,6 +36,9 @@ app:
 
 test:
 	cd ansible && ansible-playbook playbooks/acceptance-test.yaml
+
+failure:
+	cd ansible && ansible-playbook playbooks/failure-exercise.yaml
 
 $(VM_ACTIONS):
 	@$(if $(filter vm k8s,$(MAKECMDGOALS)),,echo "usage: make vm|k8s $@" >&2; exit 2)
