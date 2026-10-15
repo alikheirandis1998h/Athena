@@ -2,7 +2,7 @@
 
 Deploys the sample app (`app/`) to the cluster with the Helm chart in `app/chart`. Runs on the first control-plane node.
 
-Run it with `make app deploy APP_RELEASE=vX.Y.Z-release`. The release is a tag named `vMAJOR.MINOR.PATCH-release` on a commit that CI built. The Makefile resolves the tag to its commit and passes both to Ansible. The chart deploys the images tagged `api-vX.Y.Z-release` and `web-vX.Y.Z-release`, which CI publishes when the tag is pushed. If `APP_RELEASE` is not given, it defaults to the latest `v*-release` tag reachable from HEAD.
+Run it with `make app up APP_RELEASE=vX.Y.Z-release`. The release is a tag named `vMAJOR.MINOR.PATCH-release` on a commit that CI built. The Makefile resolves the tag to its commit and passes both to Ansible. The chart deploys the images tagged `api-vX.Y.Z-release` and `web-vX.Y.Z-release`, which CI publishes when the tag is pushed. If `APP_RELEASE` is not given, it defaults to the latest `v*-release` tag reachable from HEAD.
 
 Create a release with `git tag -a vX.Y.Z-release <commit> -m "..."`. Push the tag when it is ready to share.
 
@@ -33,7 +33,7 @@ Port 30080 is the ingress NodePort. The deploy also writes a managed block to `/
 # END ANSIBLE athena app hosts
 ```
 
-That step needs sudo on the controller, so `make app deploy` prompts for your password. Browsers on other machines need the same line added by hand.
+That step needs sudo on the controller, so `make app up` prompts for your password. Browsers on other machines need the same line added by hand.
 
 ## Known limits
 

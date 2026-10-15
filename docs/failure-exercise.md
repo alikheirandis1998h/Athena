@@ -31,7 +31,7 @@ Two runs on the local cluster, on the image `api-99937c1`.
 
 With two replicas the ingress kept sending requests to the surviving pod, so the API did not go down.
 
-The 1-replica run was done before the 2-replica change. The 2-replica run was done after `make app deploy`.
+The 1-replica run was done before the 2-replica change. The 2-replica run was done after `make app up`.
 
 The delete used the normal graceful path. The events show `Killing: Stopping container api`, then the replacement pod's scheduling and start. The API's SIGTERM handler gives in-flight requests up to 10 seconds to finish.
 

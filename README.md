@@ -25,14 +25,20 @@ A local Kubernetes platform on libvirt VMs, built and managed with Ansible. The 
 
 ## Usage
 
-Run the steps in this order:
+To bring everything up in one go (host setup, VMs, cluster, and the app; no failure checks):
+
+```
+make up
+```
+
+Or run the steps in this order:
 
 ```
 make host-setup     # once per controller: Vagrant, libvirt, and the libvirt ACL
 make vm up          # create and start the seven VMs
 make k8s up         # configure the VMs and bring up the cluster
 make k8s status     # validate the nodes and the cluster; fails if any check fails
-make app deploy     # deploy the sample app at the latest vX.Y.Z-release tag
+make app up         # deploy the sample app at the latest vX.Y.Z-release tag
 make test           # the full acceptance test; fails and names the failed checks
 make failure        # delete an API pod and measure recovery; see docs/failure-exercise.md
 ```

@@ -6,7 +6,7 @@
       - app_release_tag is match('^v[0-9]+\.[0-9]+\.[0-9]+-release$')
       - app_release_sha is defined
       - app_release_sha is match('^[0-9a-f]{40}$')
-    fail_msg: "Tag a release (for example v0.1.0-release) on a commit CI built, then run make app deploy APP_RELEASE=v0.1.0-release"
+    fail_msg: "Tag a release (for example v0.1.0-release) on a commit CI built, then run make app up APP_RELEASE=v0.1.0-release"
 
 - name: Create the local secrets directory
   ansible.builtin.file:
