@@ -114,10 +114,9 @@
   register: kubelet_config_raw
   when: kubelet_config.stat.exists
 
-- name: Apply the kubelet settings on nodes that already joined the cluster
-  ansible.builtin.copy:
-    dest: /var/lib/kubelet/config.yaml
-    content: >-
+- name: Work out the kubelet settings for nodes that already joined the cluster
+  ansible.builtin.set_fact:
+    kubelet_config_wanted: >-
       {{ kubelet_config_raw.content | b64decode | from_yaml
          | combine({
              'serializeImagePulls': false,
@@ -129,8 +128,16 @@
              'evictionSoftGracePeriod': kubelet_eviction_soft_grace_period,
              'shutdownGracePeriod': kubelet_shutdown_grace_period,
              'shutdownGracePeriodCriticalPods': kubelet_shutdown_grace_period_critical_pods
-           }) | to_nice_yaml(indent=2) }}
+           }) }}
   when: kubelet_config.stat.exists
+
+- name: Apply the kubelet settings on nodes that already joined the cluster
+  ansible.builtin.copy:
+    dest: /var/lib/kubelet/config.yaml
+    content: "{{ kubelet_config_wanted | to_nice_yaml(indent=2) }}"
+  when:
+    - kubelet_config.stat.exists
+    - (kubelet_config_raw.content | b64decode | from_yaml) != kubelet_config_wanted
   notify: Restart kubelet
 
 - name: Enable kubelet (it starts for real during kubeadm init or join)
