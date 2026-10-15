@@ -5,6 +5,7 @@ export
 
 VM_ACTIONS := up down status destroy
 APP_ACTIONS := deploy
+FAILURE_ACTIONS := pod node
 
 # Release to deploy, as a vX.Y.Z-release tag. Defaults to the latest such tag.
 APP_RELEASE ?= $(shell git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*-release' 2>/dev/null)
@@ -38,7 +39,15 @@ test:
 	cd ansible && ansible-playbook playbooks/acceptance-test.yaml
 
 failure:
-	cd ansible && ansible-playbook playbooks/failure-exercise.yaml
+	@case "$(word 2,$(MAKECMDGOALS))" in \
+		pod) cd ansible && ansible-playbook playbooks/failure-pod.yaml ;; \
+		node) cd ansible && ansible-playbook playbooks/failure-node.yaml ;; \
+		"") cd ansible && ansible-playbook playbooks/failure-pod.yaml && ansible-playbook playbooks/failure-node.yaml ;; \
+		*) echo "usage: make failure [pod|node]" >&2; exit 2 ;; \
+	esac
+
+$(FAILURE_ACTIONS):
+	@$(if $(filter failure,$(MAKECMDGOALS)),,echo "usage: make failure [pod|node]" >&2; exit 2)
 
 $(VM_ACTIONS):
 	@$(if $(filter vm k8s,$(MAKECMDGOALS)),,echo "usage: make vm|k8s $@" >&2; exit 2)

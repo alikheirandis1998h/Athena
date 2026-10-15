@@ -56,10 +56,10 @@
         cmd: "test \"$({{ kubectl }} -n {{ app_namespace }} get deploy app-web -o jsonpath='{.status.readyReplicas}')\" = \"$({{ kubectl }} -n {{ app_namespace }} get deploy app-web -o jsonpath='{.spec.replicas}')\""
       - name: PostgreSQL ready
         cmd: "test \"$({{ kubectl }} -n {{ app_namespace }} get statefulset app-postgres -o jsonpath='{.status.readyReplicas}')\" = 1"
-      - name: API image is an immutable api-<commit sha> tag
-        cmd: "imgs=\"$({{ kubectl }} -n {{ app_namespace }} get pods -l app=app-api -o jsonpath='{.items[*].spec.containers[*].image}')\"; test -n \"$imgs\" || exit 1; for img in $imgs; do echo \"$img\" | grep -Eq ':api-[0-9a-f]{40}$' || exit 1; done"
-      - name: Web image is an immutable web-<commit sha> tag
-        cmd: "imgs=\"$({{ kubectl }} -n {{ app_namespace }} get pods -l app=app-web -o jsonpath='{.items[*].spec.containers[*].image}')\"; test -n \"$imgs\" || exit 1; for img in $imgs; do echo \"$img\" | grep -Eq ':web-[0-9a-f]{40}$' || exit 1; done"
+      - name: API image is an immutable api-<commit sha> or api-vX.Y.Z-release tag
+        cmd: "imgs=\"$({{ kubectl }} -n {{ app_namespace }} get pods -l app=app-api -o jsonpath='{.items[*].spec.containers[*].image}')\"; test -n \"$imgs\" || exit 1; for img in $imgs; do echo \"$img\" | grep -Eq ':api-([0-9a-f]{40}|v[0-9]+\\.[0-9]+\\.[0-9]+-release)$' || exit 1; done"
+      - name: Web image is an immutable web-<commit sha> or web-vX.Y.Z-release tag
+        cmd: "imgs=\"$({{ kubectl }} -n {{ app_namespace }} get pods -l app=app-web -o jsonpath='{.items[*].spec.containers[*].image}')\"; test -n \"$imgs\" || exit 1; for img in $imgs; do echo \"$img\" | grep -Eq ':web-([0-9a-f]{40}|v[0-9]+\\.[0-9]+\\.[0-9]+-release)$' || exit 1; done"
       - name: Web reachable through ingress on every worker
         cmd: "for ip in {{ app_worker_ips | join(' ') }}; do curl -fsS -o /dev/null -H 'Host: {{ app_web_host }}' http://$ip:{{ app_ingress_nodeport }}/ || exit 1; done"
       - name: API health reachable through ingress on every worker

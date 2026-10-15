@@ -1,0 +1,188 @@
+---
+# Node failure exercise (make failure node). Powers off one worker VM, samples the API through a
+# surviving worker, waits for the API to run on the surviving workers, then powers the VM back on
+# and waits for it to rejoin. See docs/failure-exercise.md for the expected and observed behavior.
+
+- name: Power off one worker and measure recovery
+  hosts: control_plane[0]
+  become: true
+  gather_facts: false
+  vars:
+    kubectl: kubectl --kubeconfig /etc/kubernetes/admin.conf
+    app_namespace: app
+    app_api_host: api.baseapp.local
+    app_ingress_nodeport: 30080
+    worker_names: "{{ groups['workers'] }}"
+    samples_file: /tmp/athena-node-samples.log
+    sampler_file: /tmp/athena-node-sampler.sh
+    sampler_seconds: 1800
+    notready_retries: 72
+    recovery_retries: 180
+    rejoin_retries: 120
+  tasks:
+    - name: Pick a worker that does not run PostgreSQL, preferring one that runs the API
+      ansible.builtin.shell: |
+        pg=$({{ kubectl }} -n {{ app_namespace }} get pod app-postgres-0 -o jsonpath='{.spec.nodeName}')
+        api=$({{ kubectl }} -n {{ app_namespace }} get pods -l app=app-api -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}')
+        victim=$(printf '%s\n' "$api" | grep -vx "$pg" | grep . | head -1)
+        if [ -z "$victim" ]; then
+          for n in {{ worker_names | join(' ') }}; do [ "$n" != "$pg" ] && { victim=$n; break; }; done
+        fi
+        echo "$victim"
+      args:
+        executable: /bin/bash
+      register: picked
+      changed_when: false
+
+    - name: Set the victim and a surviving worker
+      ansible.builtin.set_fact:
+        victim: "{{ picked.stdout | trim }}"
+        survivor: "{{ (worker_names | difference([picked.stdout | trim]) | first) }}"
+
+    - name: Copy the sampler to the node
+      ansible.builtin.copy:
+        dest: "{{ sampler_file }}"
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          # usage: sampler <probe ip> <samples file> <seconds>
+          end=$(( $(date +%s) + $3 ))
+          while [ "$(date +%s)" -lt "$end" ]; do
+            code=$(curl -s -o /dev/null -m 2 -w '%{http_code}' -H 'Host: {{ app_api_host }}' http://$1:{{ app_ingress_nodeport }}/health)
+            echo "$(date +%s) $code" >> "$2"
+            sleep 1
+          done
+
+    - name: Start sampling the API through the surviving worker
+      ansible.builtin.shell: |
+        rm -f {{ samples_file }}
+        nohup {{ sampler_file }} {{ hostvars[survivor].ansible_host }} {{ samples_file }} {{ sampler_seconds }} >/dev/null 2>&1 &
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Let the sampler record a healthy baseline
+      ansible.builtin.pause:
+        seconds: 10
+
+    - name: Power off the worker and stop the failure clock
+      block:
+        - name: Record the time of the power-off
+          ansible.builtin.command: date +%s
+          delegate_to: localhost
+          become: false
+          register: halted_at_out
+          changed_when: false
+
+        - name: Power off the worker VM without a clean shutdown
+          ansible.builtin.shell: virsh -c qemu:///system destroy "$(cat .vagrant/machines/{{ victim }}/libvirt/id)"
+          args:
+            chdir: "{{ playbook_dir }}/../../vm"
+            executable: /bin/bash
+          delegate_to: localhost
+          become: false
+          changed_when: true
+
+        - name: Wait for the cluster to mark the node NotReady
+          ansible.builtin.shell: '{{ kubectl }} get node {{ victim }} -o jsonpath=''{.status.conditions[?(@.type=="Ready")].status}'''
+          args:
+            executable: /bin/bash
+          register: node_ready
+          until: node_ready.stdout in ['False', 'Unknown']
+          retries: "{{ notready_retries }}"
+          delay: 5
+          changed_when: false
+
+        - name: Record when the node was marked NotReady
+          ansible.builtin.command: date +%s
+          delegate_to: localhost
+          become: false
+          register: notready_at_out
+          changed_when: false
+
+        - name: Wait for the API to run again on the surviving workers
+          ansible.builtin.shell: |
+            want=$({{ kubectl }} -n {{ app_namespace }} get deploy app-api -o jsonpath='{.spec.replicas}')
+            got=$({{ kubectl }} -n {{ app_namespace }} get pods -l app=app-api -o jsonpath='{range .items[*]}{.spec.nodeName}{" "}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' | awk -v v="{{ victim }}" '$1 != v && $2 == "True"' | wc -l)
+            if [ "$got" = "$want" ]; then echo ok; else echo "$got/$want"; fi
+          args:
+            executable: /bin/bash
+          register: api_on_survivors
+          until: api_on_survivors.stdout == 'ok'
+          retries: "{{ recovery_retries }}"
+          delay: 5
+          changed_when: false
+
+        - name: Record when the API was back on the surviving workers
+          ansible.builtin.command: date +%s
+          delegate_to: localhost
+          become: false
+          register: recovered_at_out
+          changed_when: false
+      always:
+        - name: Power the worker VM back on
+          ansible.builtin.shell: set -a; . ./vm.env; set +a; vagrant up {{ victim }} --provider=libvirt
+          args:
+            chdir: "{{ playbook_dir }}/../../vm"
+            executable: /bin/bash
+          delegate_to: localhost
+          become: false
+          changed_when: true
+
+        - name: Wait for the worker to rejoin the cluster
+          ansible.builtin.shell: '{{ kubectl }} get node {{ victim }} -o jsonpath=''{.status.conditions[?(@.type=="Ready")].status}'''
+          args:
+            executable: /bin/bash
+          register: rejoin
+          until: rejoin.stdout == 'True'
+          retries: "{{ rejoin_retries }}"
+          delay: 5
+          changed_when: false
+
+        - name: Record when the worker rejoined
+          ansible.builtin.command: date +%s
+          delegate_to: localhost
+          become: false
+          register: rejoined_at_out
+          changed_when: false
+
+        - name: Stop the sampler
+          ansible.builtin.shell: pkill -f 'athena-node-sampler[.]sh' || true
+          changed_when: false
+
+    - name: Summarize the samples from the power-off on
+      ansible.builtin.shell: |
+        awk -v h={{ halted_at_out.stdout }} '$1 >= h { n++; if ($2 != 200) { f++; if (!first) first = $1 - h; last = $1 - h } } END { printf "samples=%d failed=%d first_failure=%ss last_failure=%ss\n", n, f+0, first+0, last+0 }' {{ samples_file }}
+      args:
+        executable: /bin/bash
+      register: summary
+      changed_when: false
+
+    - name: Show the events and pods after the exercise
+      ansible.builtin.shell: |
+        {{ kubectl }} get events -n {{ app_namespace }} --sort-by=.lastTimestamp -o custom-columns=TIME:.lastTimestamp,REASON:.reason,OBJECT:.involvedObject.name,MESSAGE:.message --no-headers | tail -15
+        {{ kubectl }} -n {{ app_namespace }} get pods -o wide
+        {{ kubectl }} get nodes
+      args:
+        executable: /bin/bash
+      register: after
+      changed_when: false
+
+    - name: Show the exercise output
+      ansible.builtin.debug:
+        msg:
+          - "victim: {{ victim }} (powered off with virsh destroy)"
+          - "survivor probed: {{ survivor }}"
+          - "node marked NotReady: {{ (notready_at_out.stdout | int) - (halted_at_out.stdout | int) }}s after power-off"
+          - "API back on surviving workers: {{ (recovered_at_out.stdout | int) - (halted_at_out.stdout | int) }}s after power-off"
+          - "worker rejoined: {{ (rejoined_at_out.stdout | int) - (halted_at_out.stdout | int) }}s after power-off"
+          - "{{ summary.stdout }}"
+          - "{{ after.stdout_lines }}"
+
+    - name: Assert the API recovered and the worker rejoined
+      ansible.builtin.assert:
+        that:
+          - api_on_survivors.stdout == 'ok'
+          - rejoin.stdout == 'True'
+        fail_msg: "Recovery failed. See the output above."
+        success_msg: "The API recovered on the surviving workers and the worker rejoined"

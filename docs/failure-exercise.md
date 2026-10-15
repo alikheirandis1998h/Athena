@@ -1,6 +1,10 @@
-# Failure exercise: API pod deletion
+# Failure exercises: API pod deletion and worker node failure
 
-Run with `make failure`. The playbook is `ansible/playbooks/failure-exercise.yaml`.
+Run `make failure pod`, `make failure node`, or `make failure` for both (pod first). The playbooks are `ansible/playbooks/failure-pod.yaml` and `ansible/playbooks/failure-node.yaml`.
+
+## Pod failure
+
+Run `make failure pod`.
 
 ## Scenario
 
@@ -15,16 +19,19 @@ The exercise deletes one `app-api` pod while a client calls `/health` through th
 
 ## Observed behavior
 
-One run on the local cluster, on the release image `api-99937c1`:
+Two runs on the local cluster, on the image `api-99937c1`.
 
-| Measure | Value |
-|---|---|
-| Pod deleted | `app-api-577d59dc88-tkxzn` (on `athena-worker-2`) |
-| First failed sample | 0 s after the delete |
-| Failed samples | 8 of 9 |
-| Outage | about 9 s (first failure to the first 200 after it) |
-| Replacement pod | `app-api-577d59dc88-mdw98`, ready 1/1 |
-| Recovery limit | 120 s (passed) |
+| Measure | 1 replica (before) | 2 replicas + PDB (after) |
+|---|---|---|
+| Pod deleted | `app-api-577d59dc88-tkxzn` | `app-api-86dbfdb858-9p7tv` |
+| First failed sample | 0 s after the delete | none observed |
+| Failed samples | 8 of 9 | 0 of 9 |
+| Outage | about 9 s | none |
+| Replacement pod | ready 1/1 | ready 2/2 |
+
+With two replicas the ingress kept sending requests to the surviving pod, so the API did not go down.
+
+The 1-replica run was done before the 2-replica change. The 2-replica run was done after `make app deploy`.
 
 The delete used the normal graceful path. The events show `Killing: Stopping container api`, then the replacement pod's scheduling and start. The API's SIGTERM handler gives in-flight requests up to 10 seconds to finish.
 
@@ -46,7 +53,7 @@ The Deployment controller replaces the pod. The readiness probe on `/health` (5 
 
 ## Remaining risks
 
-- **One replica means a full outage on every pod restart.** This is the main finding. Any rollout, eviction, or node drain has the same effect. The fix is `replicas: 2` or more, plus a PodDisruptionBudget with `minAvailable: 1`. Both are not yet in the chart.
+- **One replica meant a full outage on every pod restart.** This was the main finding. The chart now sets `replicas: 2` and a PodDisruptionBudget with `minAvailable: 1`, and the 2-replica run showed no outage. Both replicas can still land on the same worker, because there is no anti-affinity.
 - **Nothing alerts.** An outage like this is invisible until someone looks.
 - **The exercise is not automated in CI.** It needs the live cluster, so it runs by hand.
 - **The API has no `/version` endpoint.** The version is known only from the image tag.
@@ -58,10 +65,62 @@ The Deployment controller replaces the pod. The readiness probe on `/health` (5 
 - Load balancing across ingress controller replicas, so one ingress pod can fail without an outage.
 - The exercise repeated on a schedule against a staging environment, not run by hand on the lab cluster.
 
-## Re-running
-
-```
-make failure
-```
-
 The playbook is safe to repeat. It deletes whichever `app-api` pod is first in the list, and it fails if the API does not recover within 120 seconds.
+
+## Node failure
+
+Run `make failure node`.
+
+### Scenario
+
+The exercise picks a worker that does not run `app-postgres` and that runs an API pod. It samples `/health` through the ingress on a surviving worker once a second, then powers the victim off with `virsh destroy`. This is a hard power-off, not a clean shutdown. It then waits for the cluster to mark the node NotReady and for the API to run back to full replicas on the surviving workers. Finally it powers the VM back on and waits for the node to report Ready.
+
+### Expected behavior
+
+- The node goes NotReady after the kubelet's heartbeat stops and the node-monitor grace period (40 s) passes.
+- The API keeps serving from the surviving replica through the ingress, with few or no failed requests.
+- Pods on the dead node are evicted after the default 300 s toleration and replaced on surviving workers.
+- The worker rejoins after it is powered back on.
+
+### Observed behavior
+
+One run on the local cluster, on the images `api-v0.1.1-release` and `web-v0.1.1-release`. The victim was `athena-worker-3`; the probe went to `athena-worker-1`.
+
+| Measure | Value |
+|---|---|
+| Node marked NotReady | 47 to 52 s after power-off |
+| API back on surviving workers | 355 to 373 s after power-off |
+| Worker rejoined | 374 to 392 s after power-off |
+| Failed samples | 11 of 346 (first 2 s, last 44 s) and 29 of 698 (first 4 s, last 53 s) |
+
+In both runs the API failed sampled requests starting a few seconds after the power-off and ending shortly after the node was marked NotReady. So the API was not fully available during the window, even with a surviving replica. The likely cause is that the dead pod stayed in the endpoint list until the node was marked NotReady, and the survivor's ingress path still routed some requests to it. This is not confirmed.
+
+### Detection
+
+- The sampler detects the failure from outside, through the same ingress path a user takes.
+- `kubectl get nodes` shows the victim NotReady.
+- `kubectl get pods -o wide` shows the evicted pods Terminating and the replacements on surviving workers.
+
+Nothing alerts on this.
+
+### User impact
+
+Failed requests to `api.baseapp.local` for about 45 s after the power-off. Across the sampled window, 4% (29 of 698) and 3% (11 of 346) of requests failed.
+
+### Recovery mechanism
+
+Kubernetes marks the node NotReady and evicts its pods after 300 s. The Deployment creates replacement pods on the surviving workers, and the readiness probe keeps traffic away until they are ready. The Longhorn volume for `app-postgres` is on another worker and was unaffected. Once powered back on, the worker rejoins without manual steps.
+
+### Remaining risks
+
+- **No anti-affinity.** Both API replicas can land on the same worker, so one node failure can take out both.
+- **The 300 s eviction delay is the main recovery limit.** Until then, Kubernetes keeps the dead pods in the endpoint list. Tuning the toleration would shorten the outage but makes flapping nodes more disruptive.
+- **Longhorn briefly showed pods not Running after the worker returned.** `make test` failed once at the Longhorn check and passed on rerun. The exercise does not wait for Longhorn to settle.
+- **The failure is simulated with `virsh destroy` on one VM,** not a real power loss or network partition.
+
+### Production differences
+
+- Spread replicas across nodes or zones with anti-affinity and a PodDisruptionBudget.
+- Tune node-lifecycle timeouts for the failure domain, and use a load balancer in front of the ingress nodes that drops unhealthy nodes quickly.
+- Alert on NotReady nodes and on ingress error rates.
+- Run the exercise on a schedule in a staging environment.

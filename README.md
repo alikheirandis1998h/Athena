@@ -95,7 +95,7 @@ Done: VM provisioning, host preparation, node tuning, the highly available contr
 
 Not done yet (see `TaskDefinition.md`):
 
-- The app runs one replica, so any pod restart is a full outage. Two replicas and a PodDisruptionBudget are the fix.
+- The app runs two replicas each for the API and web, with a PodDisruptionBudget (`minAvailable: 1`). Not yet deployed or re-run with `make failure`. Both replicas can still land on the same worker, because there is no anti-affinity.
 - The app does not run as non-root and has no `securityContext`.
 - The observability layer (metrics, dashboards, or alerting).
 - Rollback and observability design write-ups.
