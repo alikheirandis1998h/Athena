@@ -16,6 +16,27 @@ kubernetes_service_subnet: 10.96.0.0/12
 # Kubelet pulls images in parallel, up to this many at once. The default serializes pulls per node, which slows Longhorn and Cilium installs.
 kubelet_max_parallel_image_pulls: 5
 
+# Kubelet resource reservations, eviction thresholds, and graceful shutdown. Justified in ansible/roles/node_tuning/README.md.
+kubelet_system_reserved:
+  cpu: 100m
+  memory: 256Mi
+kubelet_kube_reserved:
+  cpu: 100m
+  memory: 256Mi
+kubelet_eviction_hard:
+  memory.available: 100Mi
+  nodefs.available: 10%
+  nodefs.inodesFree: 5%
+  imagefs.available: 15%
+kubelet_eviction_soft:
+  memory.available: 300Mi
+kubelet_eviction_soft_grace_period:
+  memory.available: 90s
+kubelet_shutdown_grace_period: 30s
+kubelet_shutdown_grace_period_critical_pods: 10s
+# systemd-logind caps the kubelet's shutdown delay at this value. It must be above kubelet_shutdown_grace_period.
+kubelet_inhibit_delay_max: 60s
+
 # Control-plane endpoint shared by control-plane and worker joins (HAProxy VIP).
 haproxy_vip: 192.168.56.10
 kube_apiserver_port: 6443

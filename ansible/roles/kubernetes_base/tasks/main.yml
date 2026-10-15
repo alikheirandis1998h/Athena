@@ -95,14 +95,41 @@
     path: /var/lib/kubelet/config.yaml
   register: kubelet_config
 
-- name: Allow parallel image pulls on nodes that already joined the cluster
-  ansible.builtin.lineinfile:
-    path: /var/lib/kubelet/config.yaml
-    regexp: "^{{ item.key }}:"
-    line: "{{ item.key }}: {{ item.value }}"
-  loop:
-    - { key: serializeImagePulls, value: "false" }
-    - { key: maxParallelImagePulls, value: "{{ kubelet_max_parallel_image_pulls }}" }
+- name: Let systemd allow the kubelet's shutdown delay (logind caps it at 5 s by default)
+  ansible.builtin.file:
+    path: /etc/systemd/logind.conf.d
+    state: directory
+    mode: "0755"
+
+- name: Write the logind shutdown delay drop-in
+  ansible.builtin.copy:
+    dest: /etc/systemd/logind.conf.d/athena.conf
+    content: "[Login]\nInhibitDelayMaxSec={{ kubelet_inhibit_delay_max }}\n"
+    mode: "0644"
+  notify: Restart logind
+
+- name: Read the kubelet configuration that kubeadm wrote on this node
+  ansible.builtin.slurp:
+    src: /var/lib/kubelet/config.yaml
+  register: kubelet_config_raw
+  when: kubelet_config.stat.exists
+
+- name: Apply the kubelet settings on nodes that already joined the cluster
+  ansible.builtin.copy:
+    dest: /var/lib/kubelet/config.yaml
+    content: >-
+      {{ kubelet_config_raw.content | b64decode | from_yaml
+         | combine({
+             'serializeImagePulls': false,
+             'maxParallelImagePulls': kubelet_max_parallel_image_pulls,
+             'systemReserved': kubelet_system_reserved,
+             'kubeReserved': kubelet_kube_reserved,
+             'evictionHard': kubelet_eviction_hard,
+             'evictionSoft': kubelet_eviction_soft,
+             'evictionSoftGracePeriod': kubelet_eviction_soft_grace_period,
+             'shutdownGracePeriod': kubelet_shutdown_grace_period,
+             'shutdownGracePeriodCriticalPods': kubelet_shutdown_grace_period_critical_pods
+           }) | to_nice_yaml(indent=2) }}
   when: kubelet_config.stat.exists
   notify: Restart kubelet
 

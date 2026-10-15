@@ -8,3 +8,8 @@
   ansible.builtin.systemd:
     name: kubelet
     state: restarted
+
+- name: Restart logind
+  ansible.builtin.systemd:
+    name: systemd-logind
+    state: restarted

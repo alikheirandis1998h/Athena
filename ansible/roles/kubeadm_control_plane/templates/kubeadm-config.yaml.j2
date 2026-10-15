@@ -35,3 +35,10 @@ apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 serializeImagePulls: false
 maxParallelImagePulls: {{ kubelet_max_parallel_image_pulls }}
+systemReserved: {{ kubelet_system_reserved | to_json }}
+kubeReserved: {{ kubelet_kube_reserved | to_json }}
+evictionHard: {{ kubelet_eviction_hard | to_json }}
+evictionSoft: {{ kubelet_eviction_soft | to_json }}
+evictionSoftGracePeriod: {{ kubelet_eviction_soft_grace_period | to_json }}
+shutdownGracePeriod: {{ kubelet_shutdown_grace_period }}
+shutdownGracePeriodCriticalPods: {{ kubelet_shutdown_grace_period_critical_pods }}
