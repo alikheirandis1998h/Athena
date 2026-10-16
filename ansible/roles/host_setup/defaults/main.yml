@@ -4,6 +4,8 @@ host_setup_vagrant_sha256: "42d830d05e6e9e647f8a5c854d9f5295e319dac74edd37d54b97
 # Mirror of the HashiCorp .deb, reachable without a VPN. The checksum above verifies it.
 host_setup_vagrant_deb_url: "https://cdn.te7.ir/vagrant_{{ host_setup_vagrant_version }}-1_amd64.deb"
 host_setup_vagrant_libvirt_version: "0.12.2"
+# The HashiCorp gem server does not serve vagrant-libvirt, so install it from RubyGems.
+host_setup_vagrant_plugin_source: "https://rubygems.org"
 host_setup_apt_packages:
   - qemu-system-x86
   - libvirt-daemon-system

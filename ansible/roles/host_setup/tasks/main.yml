@@ -46,6 +46,8 @@
   ansible.builtin.command: >-
     vagrant plugin install vagrant-libvirt
     --plugin-version {{ host_setup_vagrant_libvirt_version }}
+    --plugin-clean-sources
+    --plugin-source {{ host_setup_vagrant_plugin_source }}
   when: >-
     host_setup_vagrant_plugins.stdout_lines
     | select('match', 'vagrant-libvirt \\(' ~ (host_setup_vagrant_libvirt_version | regex_escape))
