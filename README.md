@@ -17,10 +17,18 @@ A local Kubernetes platform on libvirt VMs, built and managed with Ansible. The 
 
 ## Prerequisites
 
-- Ubuntu 24.04 controller with KVM (`/dev/kvm`) and libvirt.
-- Ansible on the controller.
-- Passwordless or prompted sudo for your user.
-- Network access to `docker.novin.cloud` (container images), `pkgs.k8s.io`, `quay.io`, `ghcr.io`, and `github.com`.
+- Ubuntu 24.04 (or another apt-based distribution) controller with hardware virtualization: `/dev/kvm` must exist.
+- A user with sudo rights. `make up` asks for the sudo password once.
+- Git, with the repository cloned. `make app up` reads the release tags from git.
+- Network access to:
+  - `cdn.te7.ir`: the Vagrant package and the base box
+  - `rubygems.org`: the `vagrant-libvirt` plugin
+  - `pkgs.k8s.io`: Kubernetes packages
+  - `docker.novin.cloud`: container images
+  - `get.helm.sh`: the Helm client
+  - `github.com`: Longhorn, k9s, and Silo downloads
+  - `ghcr.io`: the NGINX ingress chart and the Spilo image
+- Not needed beforehand: Ansible, libvirt, QEMU, Vagrant, and the Vagrant plugin. `make up` installs Ansible if it is missing (see `scripts/ensure-ansible.sh`), and `make host-setup` installs the rest. If you run `make host-setup` on its own, install Ansible first.
 - If `/usr/bin/sudo` is sudo-rs, export `ANSIBLE_BECOME_EXE=/usr/bin/sudo.ws` before `make host-setup`. See `ansible/roles/host_setup/README.md`.
 
 ## Usage
