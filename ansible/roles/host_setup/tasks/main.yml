@@ -14,6 +14,13 @@
   check_mode: false
   failed_when: false
 
+- name: Create the download cache directory
+  ansible.builtin.file:
+    path: "{{ host_setup_cache_dir }}"
+    state: directory
+    mode: "0755"
+  when: (host_setup_vagrant_version_out.stdout.split() + ['', ''])[1] != host_setup_vagrant_version
+
 - name: Download the pinned Vagrant package
   ansible.builtin.get_url:
     url: "{{ host_setup_vagrant_deb_url }}"
