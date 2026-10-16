@@ -1,4 +1,22 @@
 ---
+- name: Copy the pinned Cilium chart to this node
+  ansible.builtin.copy:
+    src: "cilium-{{ cilium_chart_version }}.tgz"
+    dest: "/var/tmp/cilium-{{ cilium_chart_version }}.tgz"
+    mode: "0644"
+
+- name: Check the Cilium chart checksum
+  ansible.builtin.stat:
+    path: "/var/tmp/cilium-{{ cilium_chart_version }}.tgz"
+    checksum_algorithm: sha256
+    get_checksum: true
+  register: cilium_chart_stat
+
+- name: Stop when the Cilium chart does not match the pinned checksum
+  ansible.builtin.assert:
+    that: cilium_chart_stat.stat.checksum == cilium_chart_sha256
+    fail_msg: "The vendored Cilium chart does not match cilium_chart_sha256."
+
 - name: Render the Cilium values
   ansible.builtin.template:
     src: cilium-values.yaml.j2
@@ -15,7 +33,7 @@
 
 - name: Install or upgrade Cilium when the chart or the values change
   ansible.builtin.command: >-
-    helm upgrade --install cilium oci://quay.io/cilium/charts/cilium@{{ cilium_chart_digest }}
+    helm upgrade --install cilium /var/tmp/cilium-{{ cilium_chart_version }}.tgz
     --namespace kube-system
     --values /etc/kubernetes/athena-cilium-values.yaml
     --wait --timeout 10m
