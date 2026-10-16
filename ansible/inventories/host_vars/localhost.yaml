@@ -1,0 +1,3 @@
+---
+# The controller's sudo password. make reads it once and exports it; it is never stored in the repo.
+ansible_become_password: "{{ lookup('ansible.builtin.env', 'ATHENA_BECOME_PASSWORD') }}"

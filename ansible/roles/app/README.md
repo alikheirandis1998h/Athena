@@ -33,7 +33,7 @@ Port 30080 is the ingress NodePort. The deploy also writes a managed block to `/
 # END ANSIBLE athena app hosts
 ```
 
-That step needs sudo on the controller, so `make app up` prompts for your password. Browsers on other machines need the same line added by hand.
+That step needs sudo on the controller, so `make app up` asks for your password (once, shared with `make up`). Browsers on other machines need the same line added by hand.
 
 ## Known limits
 

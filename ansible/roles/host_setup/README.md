@@ -18,7 +18,7 @@
 ## Inputs
 
 - Pins are role defaults in `roles/host_setup/defaults/main.yml`. Override them with `-e` or group/host vars if needed.
-- The user is the account that runs `ansible-playbook`. Run it with `--ask-become-pass` so sudo can prompt. Run it as your normal user, not with `sudo make`, or the role would target root.
+- The user is the account that runs `ansible-playbook`. `make` asks for the sudo password once and passes it through `ATHENA_BECOME_PASSWORD`, which `ansible/inventories/host_vars/localhost.yaml` reads. Running `ansible-playbook` directly needs that variable exported. Run it as your normal user, not with `sudo make`, or the role would target root.
 - On systems where `/usr/bin/sudo` is sudo-rs, Ansible's privilege escalation can fail. Point it at classic sudo with `export ANSIBLE_BECOME_EXE=/usr/bin/sudo.ws` before `make host-setup`. This is an environment setting, not an inventory setting, so it doesn't affect other machines.
 - After the first run, the user is added to the `libvirt` group. Log out and back in before running `make vm up`.
 
@@ -29,6 +29,6 @@
 
 ## Verification
 
-- `ansible-playbook playbooks/host-setup.yaml --ask-become-pass` on a prepared host reports `changed=0` on a second run.
+- `make host-setup` on a prepared host reports `changed=0` on a second run.
 - `vagrant --version` prints the pinned version, and `vagrant plugin list` shows `vagrant-libvirt (0.12.2)`.
 - `getfacl /var/run/libvirt/libvirt-sock` shows `user:<you>:rw-`.

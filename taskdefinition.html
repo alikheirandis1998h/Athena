@@ -424,7 +424,7 @@ th { background: #f3f3f3; }
 
 <ul>
 <li>Manually prepared virtual machines<br><span class="answer"><strong>Met.</strong> Vagrant creates the VMs.</span></li>
-<li>Repeated manual bootstrap steps<br><span class="answer"><strong>Met for the platform.</strong> <code>make up</code> runs once. The operator enters the sudo password for <code>make host-setup</code> and <code>make app up</code>.</span></li>
+<li>Repeated manual bootstrap steps<br><span class="answer"><strong>Met for the platform.</strong> <code>make up</code> runs once. The operator enters the sudo password once, at the start of <code>make up</code>.</span></li>
 <li>Mutable-only image tags<br><span class="answer"><strong>Met.</strong> Commit and release tags.</span></li>
 <li>Plaintext secrets<br><span class="answer"><strong>Met.</strong> Scanned by <code>make test</code>.</span></li>
 <li>Undocumented operator knowledge<br><span class="answer"><strong>Partially met.</strong> The Docker Hub source of the app images is not documented as a behavior. The sudo-rs note is in the host_setup README.</span></li>
