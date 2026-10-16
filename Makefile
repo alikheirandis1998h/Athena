@@ -19,7 +19,7 @@ host-setup:
 	@$(ASK_BECOME); cd ansible && ansible-playbook playbooks/host-setup.yaml
 
 up:
-	@$(if $(filter vm k8s app,$(MAKECMDGOALS)),,$(ASK_BECOME); $(MAKE) host-setup && $(MAKE) vm up && $(MAKE) k8s up && $(MAKE) app up)
+	@$(if $(filter vm k8s app,$(MAKECMDGOALS)),,$(ASK_BECOME); bash scripts/ensure-ansible.sh && $(MAKE) host-setup && $(MAKE) vm up && $(MAKE) k8s up && $(MAKE) app up)
 
 vm:
 	@case "$(word 2,$(MAKECMDGOALS))" in \
