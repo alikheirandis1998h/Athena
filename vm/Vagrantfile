@@ -11,7 +11,9 @@ end
 
 Vagrant.configure("2") do |config|
   config.vm.box = ENV.fetch("ATHENA_BOX")
-  config.vm.box_version = ENV.fetch("ATHENA_BOX_VERSION")
+  config.vm.box_url = ENV.fetch("ATHENA_BOX_URL")
+  config.vm.box_download_checksum = ENV.fetch("ATHENA_BOX_SHA256")
+  config.vm.box_download_checksum_type = "sha256"
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
   nodes.each do |node|
