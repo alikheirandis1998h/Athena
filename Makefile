@@ -13,7 +13,7 @@ APP_RELEASE ?= $(shell git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0
 
 # Ask once for the controller's sudo password and export it for Ansible (ansible/inventories/host_vars/localhost.yaml).
 # Skipped when it is already set, so make up prompts once for all its steps.
-ASK_BECOME = if [ -z "$$ATHENA_BECOME_PASSWORD" ]; then read -r -s -p "sudo password for $$USER: " ATHENA_BECOME_PASSWORD && echo && export ATHENA_BECOME_PASSWORD; fi
+ASK_BECOME = if [ "$$(id -u)" -eq 0 ]; then echo "Run make as your normal user, not with sudo. It asks for the sudo password itself." >&2; exit 1; fi; if [ -z "$$ATHENA_BECOME_PASSWORD" ]; then read -r -s -p "sudo password for $$USER: " ATHENA_BECOME_PASSWORD && echo && export ATHENA_BECOME_PASSWORD; fi
 
 host-setup:
 	@$(ASK_BECOME); cd ansible && ansible-playbook playbooks/host-setup.yaml

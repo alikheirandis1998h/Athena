@@ -16,18 +16,18 @@
 
 - name: Download the pinned Vagrant package
   ansible.builtin.get_url:
-    url: "https://releases.hashicorp.com/vagrant/{{ host_setup_vagrant_version }}/vagrant_{{ host_setup_vagrant_version }}-1_amd64.deb"
+    url: "{{ host_setup_vagrant_deb_url }}"
     dest: "{{ host_setup_cache_dir }}/vagrant_{{ host_setup_vagrant_version }}-1_amd64.deb"
     checksum: "sha256:{{ host_setup_vagrant_sha256 }}"
     mode: "0644"
-  when: (host_setup_vagrant_version_out.stdout.split() + [''])[1] != host_setup_vagrant_version
+  when: (host_setup_vagrant_version_out.stdout.split() + ['', ''])[1] != host_setup_vagrant_version
 
 - name: Install the pinned Vagrant package
   ansible.builtin.apt:
     deb: "{{ host_setup_cache_dir }}/vagrant_{{ host_setup_vagrant_version }}-1_amd64.deb"
     state: present
   become: true
-  when: (host_setup_vagrant_version_out.stdout.split() + [''])[1] != host_setup_vagrant_version
+  when: (host_setup_vagrant_version_out.stdout.split() + ['', ''])[1] != host_setup_vagrant_version
 
 - name: List the installed Vagrant plugins
   ansible.builtin.command: vagrant plugin list
@@ -56,6 +56,13 @@
     name: "{{ host_setup_user }}"
     groups: libvirt
     append: true
+  become: true
+
+- name: Create the libvirtd drop-in directory
+  ansible.builtin.file:
+    path: "{{ host_setup_acl_dropin | dirname }}"
+    state: directory
+    mode: "0755"
   become: true
 
 - name: Install the libvirt socket ACL drop-in
